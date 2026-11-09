@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
@@ -25,34 +26,44 @@ func (OrmTransaction) TableName() string {
 	return TableNameTransaction
 }
 
-// InstallTransaction 新增交易及明细
-func InstallTransaction(transaction *OrmTransaction) error {
-	return db.Create(&transaction).Error
+// validateOccAt 校验发生时间戳，0 视为非法
+func validateOccAt(occAt int64) error {
+	if occAt == 0 {
+		return fmt.Errorf("invalid occ_at: must not be zero")
+	}
+	return nil
 }
 
-// InstallTransactionAndDetail 新增交易及明细，返回主交易ID
+// InstallTransaction 新增交易
+func InstallTransaction(transaction *OrmTransaction) error {
+	if err := validateOccAt(transaction.OccAt); err != nil {
+		return err
+	}
+	return db.Create(transaction).Error
+}
+
+// InstallTransactionAndDetail 新增交易及明细
 func InstallTransactionAndDetail(transaction *OrmTransaction, detail []*OrmDetail) error {
-	var transactionID int64 // 用于存储新增的transaction ID
+	if err := validateOccAt(transaction.OccAt); err != nil {
+		return err
+	}
+
+	var transactionID int64
 	err := db.Transaction(func(tx *gorm.DB) error {
-		// 1. 先创建主交易记录
 		if err := tx.Create(transaction).Error; err != nil {
 			return err
 		}
 		if len(detail) > 0 {
-			// 2. 获取刚插入的transaction的ID（假设结构体中定义的ID字段为Id）
 			transactionID = transaction.Kid
-			// 3. 为所有明细设置关联的transaction_id
 			for i := range detail {
-				detail[i].TransactionId = transactionID // 假设明细结构体中关联字段为TransactionId
+				detail[i].TransactionId = transactionID
 			}
-			// 4. 创建明细详情
 			if err := tx.Create(&detail).Error; err != nil {
 				return err
 			}
 		}
 		return nil
 	})
-
 	return err
 }
 
@@ -71,14 +82,26 @@ func DeleteTransaction(instanceId string, transactionId int64) error {
 	return r.Error
 }
 
-// UpdateTransaction
+// UpdateTransaction 更新账单
 // transaction: 主表待更新字段map
 // detailList == nil ：不操作明细表，保留原有明细
 // detailList != nil：先删除当前交易所有明细；len=0清空明细，len>0替换明细
 func (d DB) UpdateTransaction(tid int64, transaction map[string]any, detailList []*OrmDetail) error {
 	err := d.db.Transaction(func(tx *gorm.DB) error {
-		// 1. 更新主交易记录（有字段才更新）
 		if len(transaction) > 0 {
+			delete(transaction, "create_time")
+			transaction["update_time"] = time.Now().UnixMilli()
+
+			if v, ok := transaction["occ_at"]; ok {
+				occAt, ok := v.(int64)
+				if !ok {
+					return fmt.Errorf("invalid occ_at type: %T", v)
+				}
+				if err := validateOccAt(occAt); err != nil {
+					return err
+				}
+			}
+
 			if err := tx.Model(&OrmTransaction{}).
 				Where("instance_id = ? AND kid = ?", d.instanceId, tid).
 				Updates(transaction).Error; err != nil {
@@ -86,13 +109,11 @@ func (d DB) UpdateTransaction(tid int64, transaction map[string]any, detailList 
 			}
 		}
 
-		// 2. 如果传入明细数组：先删旧，再批量插入新明细
 		if detailList != nil {
 			if err := tx.Where("transaction_id = ?", tid).
 				Delete(&OrmDetail{}).Error; err != nil {
 				return err
 			}
-
 			if len(detailList) > 0 {
 				if err := tx.Create(detailList).Error; err != nil {
 					return err
@@ -108,7 +129,7 @@ func FindTransactionAll(instanceId string, limit, offset int, count *int64) ([]*
 	var detail []*OrmTransaction
 	err := db.Model(&OrmTransaction{}).
 		Where("instance_id = ?", instanceId).
-		Count(count).Order("occ_time DESC").
+		Count(count).Order("occ_at DESC").
 		Limit(limit).Offset(offset).
 		Find(&detail).Error
 

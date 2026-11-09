@@ -3,14 +3,15 @@ package transaction
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/shopspring/decimal"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
 	"ledger/src/slog"
 	"net/http"
 	"strconv"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/shopspring/decimal"
 )
 
 type ReqDetailItem struct {
@@ -30,14 +31,19 @@ type ReqUpdateTransaction struct {
 	Detail  *[]ReqDetailItem `json:"detail,omitempty"`
 }
 
-// BuildTransUpdateMap 只提取【主交易表字段】，自动剔除detail
+// BuildTransUpdateMap 只提取主交易表字段；occ_time/occ_at 成对写入
 func BuildTransUpdateMap(req *ReqUpdateTransaction) (map[string]any, error) {
 	m := make(map[string]any)
 	if req.Cid != nil {
 		m["category_id"] = *req.Cid
 	}
 	if req.OccTime != nil {
-		m["occ_time"] = *req.OccTime
+		occTime, occAt, err := parseOccTime(*req.OccTime)
+		if err != nil {
+			return nil, err
+		}
+		m["occ_time"] = occTime
+		m["occ_at"] = occAt
 	}
 	if req.Amount != nil {
 		m["amount"] = *req.Amount
@@ -51,13 +57,11 @@ func BuildTransUpdateMap(req *ReqUpdateTransaction) (map[string]any, error) {
 	return m, nil
 }
 
-// ConvertToOrmDetail 将请求明细转为 OrmDetail 数组
+// ConvertToOrmDetail 请求明细转 OrmDetail 数组
 func ConvertToOrmDetail(tid int64, items []ReqDetailItem) ([]*models.OrmDetail, error) {
 	var list []*models.OrmDetail
 	for _, v := range items {
-		row := models.OrmDetail{
-			TransactionId: tid,
-		}
+		row := models.OrmDetail{TransactionId: tid}
 		if v.Name != nil {
 			row.Name = *v.Name
 		}
@@ -75,13 +79,46 @@ func ConvertToOrmDetail(tid int64, items []ReqDetailItem) ([]*models.OrmDetail, 
 		}
 		list = append(list, &row)
 	}
-
-	// 关键：items 是空切片时，强制返回非nil空切片
 	if list == nil {
 		list = make([]*models.OrmDetail, 0)
 	}
 	return list, nil
 }
+
+// validateUpdateDetailTotal 更新时校验明细总价不超过金额绝对值
+// amount 取本次传入值；未传则查库取当前值
+func validateUpdateDetailTotal(instanceId string, tid int64, reqAmount *decimal.Decimal, detailList []*models.OrmDetail) error {
+	if detailList == nil {
+		return nil
+	}
+	if len(detailList) == 0 {
+		return nil
+	}
+
+	// 确定用于比较的金额
+	amount := reqAmount
+	if amount == nil {
+		billList, err := models.GetBillById(instanceId, tid)
+		if err != nil {
+			return fmt.Errorf("query transaction for amount failed: %w", err)
+		}
+		if len(billList) == 0 {
+			return fmt.Errorf("transaction not found")
+		}
+		a := billList[0].Amount
+		amount = &a
+	}
+
+	sum := decimal.Zero
+	for _, d := range detailList {
+		sum = sum.Add(d.Total)
+	}
+	if sum.GreaterThan(amount.Abs()) {
+		return fmt.Errorf("detail total %s exceeds amount %s", sum.String(), amount.Abs().String())
+	}
+	return nil
+}
+
 func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
@@ -95,7 +132,6 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		// 1. 获取路由参数 tid /transaction/:id
 		tidStr := c.Param("id")
 		tid, err := strconv.ParseInt(tidStr, 10, 64)
 		if err != nil {
@@ -114,17 +150,15 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 					"Failed to get your account info. Try again later.", nil))
 			return
 		}
-		fmt.Println(req)
-		// 2. 构建主表更新map
+
 		transMap, err := BuildTransUpdateMap(&req)
 		if err != nil {
 			klog.Error("build trans update map error", "err", err)
-			c.JSON(http.StatusInternalServerError,
-				answer.ResBody(answer.EcodeError, "build update data failed", nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", nil))
 			return
 		}
 
-		// 3. 处理明细
 		var detailList []*models.OrmDetail
 		if req.Detail != nil {
 			detailList, err = ConvertToOrmDetail(tid, *req.Detail)
@@ -135,14 +169,26 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			}
 		}
 
-		// 校验：主表无更新 且 detailList == nil（前端没有传detail字段）→ 无任何更新内容
 		if len(transMap) == 0 && detailList == nil {
 			c.JSON(http.StatusBadRequest,
 				answer.ResBody(answer.EcodeInvalidRequestError, "no fields to update", nil))
 			return
 		}
 
-		// 4. 初始化DAO
+		// 明细总价校验：本次操作了明细才校验
+		if err := validateUpdateDetailTotal(instanceId, tid, req.Amount, detailList); err != nil {
+			klog.Warnf("validate detail total failed: %v", err)
+			if err.Error() == "transaction not found" {
+				c.JSON(http.StatusNotFound,
+					answer.ResBody(answer.EcodeInvalidRequestError, "transaction not found", nil))
+				return
+			}
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidRequestError,
+					"detail total must not exceed amount", nil))
+			return
+		}
+
 		dao, err := models.NewDBModel(instanceId)
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
@@ -150,10 +196,13 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		// 5. 调用DAO，只传3个参数，匹配签名
-		err = dao.UpdateTransaction(tid, transMap, detailList)
-		if err != nil {
+		if err := dao.UpdateTransaction(tid, transMap, detailList); err != nil {
 			klog.Error("dao UpdateTransaction failed", "err", err)
+			if isInvalidOccAt(err) {
+				c.JSON(http.StatusBadRequest,
+					answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", nil))
+				return
+			}
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "update failed", nil))
 			return
 		}

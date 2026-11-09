@@ -172,7 +172,8 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 			CategoryId int64           `json:"category_id"`
 			Category   Category        `json:"category"`
 			Amount     decimal.Decimal `json:"amount"`
-			OccTime    int64           `json:"occ_time"`
+			OccTime    int64           `json:"occ_time"` // 后续可能删掉
+			OccAt      int64           `json:"occ_at"`
 			Remark     string          `json:"remark"`
 			UpdateTime int64           `json:"update_time"`
 			CreateTime int64           `json:"create_time"`
@@ -184,7 +185,8 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 				CategoryId: v.CategoryId,
 				Category:   Category{Id: v.CategoryId},
 				Amount:     v.Amount,
-				OccTime:    timeToMillisecond(v.OccTime),
+				OccTime:    v.OccAt,
+				OccAt:      v.OccAt,
 				Remark:     v.Remark,
 				UpdateTime: v.UpdateTime,
 				CreateTime: v.CreateTime,
@@ -214,7 +216,7 @@ type DetailItem struct {
 	Name     string          `json:"name"`     // 物品名称
 	Quantity decimal.Decimal `json:"quantity"` // 数目
 	Price    decimal.Decimal `json:"price"`    // 单价
-	Total    decimal.Decimal `json:"total"`    // 总价 = 数量 × 单价
+	Total    decimal.Decimal `json:"total"`    // 总价 = 数量 × 单价。明细总价只要不大于总额即可
 	Unit     string          `json:"unit"`     // 单位
 }
 

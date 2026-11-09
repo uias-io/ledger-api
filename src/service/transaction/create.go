@@ -2,12 +2,14 @@ package transaction
 
 import (
 	"context"
+	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/common"
 	"ledger/src/service/instance"
 	"ledger/src/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -33,16 +35,35 @@ type ReqTransaction struct {
 	Detail  []*Detail       `json:"detail"`
 }
 
-// 转换时间字符串为毫秒时间戳
-func timeToMillisecond(timeStr string) int64 {
-	// https://pkg.go.dev/time#pkg-constants
+// isInvalidOccAt 判断 DAO 返回的错误是否为 occ_at 非法
+func isInvalidOccAt(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "invalid occ_at")
+}
+
+// parseOccTime 解析 ISO 8601 时间字符串，返回规范化字符串和毫秒时间戳。
+// occ_time / occ_at 的唯一派生入口，解析失败显式报错。
+func parseOccTime(timeStr string) (string, int64, error) {
 	layout := "2006-01-02T15:04:05-0700"
 	t, err := time.Parse(layout, timeStr)
 	if err != nil {
-		return 0
+		return "", 0, fmt.Errorf("invalid occ_time %q: %w", timeStr, err)
 	}
+	return t.Format(layout), t.UnixMilli(), nil
+}
 
-	return t.UnixMilli()
+// validateDetailTotal 校验明细总价之和不超过账单金额绝对值
+func validateDetailTotal(amount decimal.Decimal, details []*Detail) error {
+	if len(details) == 0 {
+		return nil
+	}
+	sum := decimal.Zero
+	for _, d := range details {
+		sum = sum.Add(d.Total)
+	}
+	if sum.GreaterThan(amount.Abs()) {
+		return fmt.Errorf("detail total %s exceeds amount %s", sum.String(), amount.Abs().String())
+	}
+	return nil
 }
 
 func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
@@ -58,7 +79,6 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		// 查询用户的实例ID
 		instanceId, err := instance.GetInstanceId(userId)
 		if err != nil {
 			klog.Errorf("get instance id failed  %v", err)
@@ -68,31 +88,49 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
+		occTime, occAt, err := parseOccTime(ReqData.OccTime)
+		if err != nil {
+			klog.Errorf("parse occ_time failed %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
+			return
+		}
+
+		// 明细总价不得超过金额绝对值
+		if err := validateDetailTotal(ReqData.Amount, ReqData.Detail); err != nil {
+			klog.Warnf("validate detail total failed: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidRequestError,
+					"detail total must not exceed amount", ""))
+			return
+		}
+
 		now := common.CreateTimestamp()
 		dbData := &models.OrmTransaction{
 			InstanceId: instanceId,
 			CategoryId: ReqData.Cid,
 			Amount:     ReqData.Amount,
-			OccTime:    ReqData.OccTime,
-			OccAt:      timeToMillisecond(ReqData.OccTime),
+			OccTime:    occTime,
+			OccAt:      occAt,
 			Remark:     ReqData.Remark,
 			UpdateTime: now,
 			CreateTime: now,
 		}
 
 		if len(ReqData.Detail) <= 0 {
-			// 没有明细
-			err = models.InstallTransaction(dbData)
-			if err != nil {
+			if err := models.InstallTransaction(dbData); err != nil {
 				klog.Errorf("insert transaction failed %v", err)
+				if isInvalidOccAt(err) {
+					c.JSON(http.StatusBadRequest,
+						answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
+					return
+				}
 				c.JSON(http.StatusInternalServerError,
-					answer.ResBody(answer.EcodeError,
-						"Failed to create transaction. Try again later.", ""))
+					answer.ResBody(answer.EcodeError, "Failed to create transaction. Try again later.", ""))
 				return
 			}
 		} else {
 			detail := make([]*models.OrmDetail, 0)
-			// 有明细详情
 			for _, val := range ReqData.Detail {
 				detail = append(detail, &models.OrmDetail{
 					Name:     val.Name,
@@ -102,12 +140,15 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 					Total:    val.Total,
 				})
 			}
-			err = models.InstallTransactionAndDetail(dbData, detail)
-			if err != nil {
+			if err := models.InstallTransactionAndDetail(dbData, detail); err != nil {
 				klog.Errorf("insert transaction failed %v", err)
+				if isInvalidOccAt(err) {
+					c.JSON(http.StatusBadRequest,
+						answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
+					return
+				}
 				c.JSON(http.StatusInternalServerError,
-					answer.ResBody(answer.EcodeError,
-						"Failed to create transaction. Try again later.", ""))
+					answer.ResBody(answer.EcodeError, "Failed to create transaction. Try again later.", ""))
 				return
 			}
 		}
