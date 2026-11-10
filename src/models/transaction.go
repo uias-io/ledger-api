@@ -35,36 +35,25 @@ func validateOccAt(occAt int64) error {
 }
 
 // InstallTransaction 新增交易
-func InstallTransaction(transaction *OrmTransaction) error {
-	if err := validateOccAt(transaction.OccAt); err != nil {
-		return err
-	}
-	return db.Create(transaction).Error
-}
-
-// InstallTransactionAndDetail 新增交易及明细
-func InstallTransactionAndDetail(transaction *OrmTransaction, detail []*OrmDetail) error {
+func InstallTransaction(transaction *OrmTransaction, detail []*OrmDetail) error {
 	if err := validateOccAt(transaction.OccAt); err != nil {
 		return err
 	}
 
-	var transactionID int64
-	err := db.Transaction(func(tx *gorm.DB) error {
+	if len(detail) == 0 {
+		return db.Create(transaction).Error
+	}
+
+	return db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(transaction).Error; err != nil {
 			return err
 		}
-		if len(detail) > 0 {
-			transactionID = transaction.Kid
-			for i := range detail {
-				detail[i].TransactionId = transactionID
-			}
-			if err := tx.Create(&detail).Error; err != nil {
-				return err
-			}
+		transactionID := transaction.Kid
+		for i := range detail {
+			detail[i].TransactionId = transactionID
 		}
-		return nil
+		return tx.Create(&detail).Error
 	})
-	return err
 }
 
 // FindTransactionForUser 按用户实例和id查询
@@ -164,7 +153,7 @@ type TransactionFilter struct {
 	SortOrder  string // "ASC" | "DESC"
 }
 
-// FindTransactionByFilter 带搜索条件的分页查询
+// FindTransactionByFilter returns a paginated list of transactions matching the search criteria.
 func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int64) ([]*OrmTransaction, error) {
 	query := db.Model(&OrmTransaction{}).
 		Where("instance_id = ?", instanceId)
@@ -173,53 +162,75 @@ func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int6
 		query = query.Where("category_id = ?", *f.CategoryId)
 	}
 	if f.From != nil {
-		query = query.Where("occ_at >= ?", *f.From) // 左闭
+		query = query.Where("occ_at >= ?", *f.From) // inclusive
 	}
 	if f.To != nil {
-		query = query.Where("occ_at < ?", *f.To) // 右开
+		query = query.Where("occ_at < ?", *f.To) // exclusive
 	}
 	if f.Keyword != nil && *f.Keyword != "" {
 		kw := escapeLike(*f.Keyword)
 		query = query.Where("remark LIKE ?", "%"+kw+"%")
 	}
 
-	// 收支方向：按 amount 正负判断，无需 join 分类表
+	// Direction: filter by the sign of amount, no join with the category table needed.
 	if f.Direction != nil {
 		switch *f.Direction {
-		case 1: // 收入
+		case 1: // income
 			query = query.Where("amount > 0")
-		case 2: // 支出
+		case 2: // expense
 			query = query.Where("amount < 0")
 		}
 	}
 
-	// 金额区间：按正负区间展开，查 10 命中 +10 和 -10
-	//   min=10,max=10  → (amount >= 10 AND amount <= 10) OR (amount >= -10 AND amount <= -10)
-	//   min=10,max=100 → (amount >= 10 AND amount <= 100) OR (amount >= -100 AND amount <= -10)
-	//   只 min=10      → (amount >= 10) OR (amount <= -10)
-	//   只 max=100     → (amount <= 100) OR (amount >= -100)
+	// Amount range: expand into positive and negative segments, so 10 matches both +10 and -10.
+	// The positive segment is constrained to amount > 0 and the negative segment to amount < 0,
+	// preventing the two segments from extending into each other and the union collapsing to a tautology
+	// when only one bound is given.
+	// Direction 1 builds only the positive segment, Direction 2 only the negative segment;
+	// nil or an invalid value (not 1/2) means no direction filter, so both segments are built.
+	//   min=10,max=10  → (amount > 0 AND amount >= 10 AND amount <= 10) OR (amount < 0 AND amount <= -10 AND amount >= -10)
+	//   min=10,max=100 → (amount > 0 AND amount >= 10 AND amount <= 100) OR (amount < 0 AND amount <= -10 AND amount >= -100)
+	//   only min=10    → (amount > 0 AND amount >= 10) OR (amount < 0 AND amount <= -10)
+	//   only max=100   → (amount > 0 AND amount <= 100) OR (amount < 0 AND amount >= -100)
 	if f.MinAmount != nil || f.MaxAmount != nil {
-		posCond := db.Where("1 = 1")
-		negCond := db.Where("1 = 1")
+		buildPos := f.Direction == nil || *f.Direction != 2
+		buildNeg := f.Direction == nil || *f.Direction != 1
 
-		if f.MinAmount != nil {
-			posCond = posCond.Where("amount >= ?", *f.MinAmount)
-			negCond = negCond.Where("amount <= ?", f.MinAmount.Neg())
+		var conds []*gorm.DB
+		if buildPos {
+			posCond := db.Where("amount > 0")
+			if f.MinAmount != nil {
+				posCond = posCond.Where("amount >= ?", *f.MinAmount)
+			}
+			if f.MaxAmount != nil {
+				posCond = posCond.Where("amount <= ?", *f.MaxAmount)
+			}
+			conds = append(conds, posCond)
 		}
-		if f.MaxAmount != nil {
-			posCond = posCond.Where("amount <= ?", *f.MaxAmount)
-			negCond = negCond.Where("amount >= ?", f.MaxAmount.Neg())
+		if buildNeg {
+			negCond := db.Where("amount < 0")
+			if f.MinAmount != nil {
+				negCond = negCond.Where("amount <= ?", f.MinAmount.Neg())
+			}
+			if f.MaxAmount != nil {
+				negCond = negCond.Where("amount >= ?", f.MaxAmount.Neg())
+			}
+			conds = append(conds, negCond)
 		}
 
-		query = query.Where(db.Where(posCond).Or(negCond))
+		if len(conds) == 1 {
+			query = query.Where(conds[0])
+		} else if len(conds) == 2 {
+			query = query.Where(db.Where(conds[0]).Or(conds[1]))
+		}
 	}
 
-	// 分页前统计总数
+	// Count the total before paginating.
 	if err := query.Count(count).Error; err != nil {
 		return nil, err
 	}
 
-	// 排序：列名/方向均来自白名单；kid 作为稳定 tie-breaker
+	// Sorting: both the column and the order come from a whitelist; kid is used as a stable tie-breaker.
 	orderClause := fmt.Sprintf("%s %s, kid %s", f.SortColumn, f.SortOrder, f.SortOrder)
 
 	var result []*OrmTransaction
@@ -227,7 +238,7 @@ func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int6
 	return result, err
 }
 
-// escapeLike 转义 LIKE 通配符
+// escapeLike escapes LIKE wildcards.
 func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
 }

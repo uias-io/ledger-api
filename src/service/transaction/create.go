@@ -32,7 +32,7 @@ type ReqTransaction struct {
 	Amount  decimal.Decimal `json:"amount"`   // 金额 0.0000
 	Remark  string          `json:"remark"`   // 备注
 	Total   int8            `json:"total"`    // 是否计入本月收支，1：计入；0：不计入
-	Detail  []*Detail       `json:"detail"`
+	Detail  []*Detail       `json:"detail"`   // 明细
 }
 
 // isInvalidOccAt 判断 DAO 返回的错误是否为 occ_at 非法
@@ -64,6 +64,24 @@ func validateDetailTotal(amount decimal.Decimal, details []*Detail) error {
 		return fmt.Errorf("detail total %s exceeds amount %s", sum.String(), amount.Abs().String())
 	}
 	return nil
+}
+
+// toOrmDetails 将请求明细转换为 ORM 明细
+func toOrmDetails(details []*Detail) []*models.OrmDetail {
+	if len(details) == 0 {
+		return nil
+	}
+	ormDetails := make([]*models.OrmDetail, 0, len(details))
+	for _, val := range details {
+		ormDetails = append(ormDetails, &models.OrmDetail{
+			Name:     val.Name,
+			Quantity: val.Quantity,
+			Price:    val.Price,
+			Unit:     val.Unit,
+			Total:    val.Total,
+		})
+	}
+	return ormDetails
 }
 
 func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
@@ -117,40 +135,16 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			CreateTime: now,
 		}
 
-		if len(ReqData.Detail) <= 0 {
-			if err := models.InstallTransaction(dbData); err != nil {
-				klog.Errorf("insert transaction failed %v", err)
-				if isInvalidOccAt(err) {
-					c.JSON(http.StatusBadRequest,
-						answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
-					return
-				}
-				c.JSON(http.StatusInternalServerError,
-					answer.ResBody(answer.EcodeError, "Failed to create transaction. Try again later.", ""))
+		if err := models.InstallTransaction(dbData, toOrmDetails(ReqData.Detail)); err != nil {
+			klog.Errorf("insert transaction failed %v", err)
+			if isInvalidOccAt(err) {
+				c.JSON(http.StatusBadRequest,
+					answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
 				return
 			}
-		} else {
-			detail := make([]*models.OrmDetail, 0)
-			for _, val := range ReqData.Detail {
-				detail = append(detail, &models.OrmDetail{
-					Name:     val.Name,
-					Quantity: val.Quantity,
-					Price:    val.Price,
-					Unit:     val.Unit,
-					Total:    val.Total,
-				})
-			}
-			if err := models.InstallTransactionAndDetail(dbData, detail); err != nil {
-				klog.Errorf("insert transaction failed %v", err)
-				if isInvalidOccAt(err) {
-					c.JSON(http.StatusBadRequest,
-						answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
-					return
-				}
-				c.JSON(http.StatusInternalServerError,
-					answer.ResBody(answer.EcodeError, "Failed to create transaction. Try again later.", ""))
-				return
-			}
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "Failed to create transaction. Try again later.", ""))
+			return
 		}
 
 		c.JSON(http.StatusCreated, answer.ResBody(answer.EcodeOK, nil, nil))
