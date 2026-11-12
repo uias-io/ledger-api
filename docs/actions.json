@@ -1,7 +1,7 @@
 [
     {
         "actionInfo": {
-            "name": "ledger:transaction:create",
+            "name": "ledger:bill:create",
             "group": "ReadWrite",
             "title": "添加流水",
             "description": "添加流水",
@@ -10,8 +10,8 @@
     },
     {
         "actionInfo": {
-            "name": "ledger:transaction:delete",
-            "group": "ReadWrite",
+            "name": "ledger:bill:delete",
+            "group": "DelOnly",
             "title": "删除流水",
             "description": "删除流水",
             "status": "enabled"
@@ -19,7 +19,7 @@
     },
     {
         "actionInfo": {
-            "name": "ledger:transaction:update",
+            "name": "ledger:bill:update",
             "group": "ReadWrite",
             "title": "修改流水",
             "description": "修改流水",
@@ -28,10 +28,19 @@
     },
     {
         "actionInfo": {
-            "name": "ledger:transaction:list",
-            "group": "ReadOnly",
+            "name": "ledger:bill:list",
+            "group": "ListOnly",
             "title": "查询流水",
-            "description": "查询流水",
+            "description": "查询流水列表",
+            "status": "enabled"
+        }
+    },
+    {
+        "actionInfo": {
+            "name": "ledger:bill:get",
+            "group": "ReadOnly",
+            "title": "查看账单详情",
+            "description": "查看单条账单详情及其标签",
             "status": "enabled"
         }
     },
@@ -47,7 +56,7 @@
     {
         "actionInfo": {
             "name": "ledger:category:delete",
-            "group": "ReadWrite",
+            "group": "DelOnly",
             "title": "删除分类",
             "description": "删除分类",
             "status": "enabled"
@@ -65,7 +74,7 @@
     {
         "actionInfo": {
             "name": "ledger:category:list",
-            "group": "ReadOnly",
+            "group": "ListOnly",
             "title": "查询分类",
             "description": "查询分类",
             "status": "enabled"
@@ -73,10 +82,19 @@
     },
     {
         "actionInfo": {
-            "name": "ledger:tag:create",
-            "group": "ReadWrite",
-            "title": "创建标签",
-            "description": "创建标签",
+            "name": "ledger:tag:list",
+            "group": "ListOnly",
+            "title": "查询标签",
+            "description": "查询高频推荐标签、模糊搜索历史标签",
+            "status": "enabled"
+        }
+    },
+    {
+        "actionInfo": {
+            "name": "ledger:overview:list",
+            "group": "ListOnly",
+            "title": "查询统计概览",
+            "description": "收支统计、趋势图、分类构成、支出排行",
             "status": "enabled"
         }
     }

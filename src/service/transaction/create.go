@@ -33,6 +33,8 @@ type ReqTransaction struct {
 	Remark  string          `json:"remark"`   // 备注
 	Total   int8            `json:"total"`    // 是否计入本月收支，1：计入；0：不计入
 	Detail  []*Detail       `json:"detail"`   // 明细
+	Tags    []string        `json:"tags"`     // 标签名称数组
+
 }
 
 // isInvalidOccAt 判断 DAO 返回的错误是否为 occ_at 非法
@@ -134,8 +136,14 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			UpdateTime: now,
 			CreateTime: now,
 		}
+		dao, err := models.NewDBModel(instanceId)
+		if err != nil {
+			klog.Errorf("NewDBModel error %s", err)
+			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			return
+		}
 
-		if err := models.InstallTransaction(dbData, toOrmDetails(ReqData.Detail)); err != nil {
+		if err := dao.InstallTransaction(dbData, toOrmDetails(ReqData.Detail), ReqData.Tags); err != nil {
 			klog.Errorf("insert transaction failed %v", err)
 			if isInvalidOccAt(err) {
 				c.JSON(http.StatusBadRequest,

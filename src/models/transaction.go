@@ -1,6 +1,7 @@
 package models
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -34,25 +35,192 @@ func validateOccAt(occAt int64) error {
 	return nil
 }
 
-// InstallTransaction 新增交易
-func InstallTransaction(transaction *OrmTransaction, detail []*OrmDetail) error {
+var ErrTransactionNotFound = errors.New("transaction not found")
+
+// ensureTransactionOwned 校验主单属于该实例，防跨租户操作子表。
+func ensureTransactionOwned(tx *gorm.DB, instanceId string, tid int64) error {
+	var cnt int64
+	if err := tx.Model(&OrmTransaction{}).
+		Where("instance_id = ? AND kid = ?", instanceId, tid).
+		Count(&cnt).Error; err != nil {
+		return fmt.Errorf("check transaction ownership: %w", err)
+	}
+	if cnt == 0 {
+		return fmt.Errorf("%w: id=%d instance=%s", ErrTransactionNotFound, tid, instanceId)
+	}
+	return nil
+}
+
+// replaceDetails 替换明细,则先删后建。
+func replaceDetails(tx *gorm.DB, tid int64, detailList []*OrmDetail) error {
+	if detailList == nil {
+		return nil
+	}
+	if err := tx.Where("transaction_id = ?", tid).
+		Delete(&OrmDetail{}).Error; err != nil {
+		return fmt.Errorf("delete detail: %w", err)
+	}
+	if len(detailList) == 0 {
+		return nil
+	}
+	for i := range detailList {
+		detailList[i].TransactionId = tid
+	}
+	if err := tx.Create(detailList).Error; err != nil {
+		return fmt.Errorf("create detail: %w", err)
+	}
+	return nil
+}
+
+// replaceTags 替换标签,先删后建。
+func replaceTags(tx *gorm.DB, instanceId string, billId int64, tags []string, createTime int64) error {
+	if tags == nil {
+		return nil
+	}
+	if err := tx.Where("instance_id = ? AND bill_id = ?", instanceId, billId).
+		Delete(&OrmBillTagRel{}).Error; err != nil {
+		return fmt.Errorf("delete bill tag: %w", err)
+	}
+	if len(tags) == 0 {
+		return nil
+	}
+	ormTags := make([]*OrmBillTagRel, 0, len(tags))
+	for _, v := range tags {
+		ormTags = append(ormTags, &OrmBillTagRel{
+			InstanceId: instanceId,
+			BillId:     billId,
+			Name:       v,
+			CreateTime: createTime,
+		})
+	}
+	if err := affairsCreateTag(tx, ormTags); err != nil {
+		return fmt.Errorf("create bill tag: %w", err)
+	}
+	return nil
+}
+
+// normalizeTags 去重 + trim + 去空。
+func normalizeTags(tags []string) []string {
+	if tags == nil {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		if _, ok := seen[t]; ok {
+			continue
+		}
+		seen[t] = struct{}{}
+		out = append(out, t)
+	}
+	return out
+}
+
+// InstallTransaction 新增交易（主单 + 明细 + 标签）
+func (d DB) InstallTransaction(transaction *OrmTransaction, detailList []*OrmDetail, tags []string) error {
 	if err := validateOccAt(transaction.OccAt); err != nil {
 		return err
 	}
 
-	if len(detail) == 0 {
-		return db.Create(transaction).Error
+	if transaction.InstanceId != "" && transaction.InstanceId != d.instanceId {
+		return fmt.Errorf("transaction instance_id %q mismatch with db instance %q",
+			transaction.InstanceId, d.instanceId)
+	}
+	transaction.InstanceId = d.instanceId
+
+	if transaction.CreateTime == 0 {
+		transaction.CreateTime = time.Now().UnixMilli()
+	}
+	if transaction.UpdateTime == 0 {
+		transaction.UpdateTime = transaction.CreateTime
 	}
 
-	return db.Transaction(func(tx *gorm.DB) error {
+	return d.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(transaction).Error; err != nil {
+			return fmt.Errorf("create transaction: %w", err)
+		}
+		if err := replaceDetails(tx, transaction.Kid, detailList); err != nil {
 			return err
 		}
-		transactionID := transaction.Kid
-		for i := range detail {
-			detail[i].TransactionId = transactionID
+		if err := replaceTags(tx, d.instanceId, transaction.Kid, normalizeTags(tags), transaction.CreateTime); err != nil {
+			return err
 		}
-		return tx.Create(&detail).Error
+		return nil
+	})
+}
+
+// DeleteTransaction 删除账单（主单 + 明细 + 标签）
+func (d DB) DeleteTransaction(tid int64) error {
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		if err := ensureTransactionOwned(tx, d.instanceId, tid); err != nil {
+			return err
+		}
+
+		if err := tx.Where("instance_id = ? AND bill_id = ?", d.instanceId, tid).
+			Delete(&OrmBillTagRel{}).Error; err != nil {
+			return fmt.Errorf("delete bill tag: %w", err)
+		}
+		if err := tx.Where("transaction_id = ?", tid).
+			Delete(&OrmDetail{}).Error; err != nil {
+			return fmt.Errorf("delete detail: %w", err)
+		}
+		if err := tx.Where("instance_id = ? AND kid = ?", d.instanceId, tid).
+			Delete(&OrmTransaction{}).Error; err != nil {
+			return fmt.Errorf("delete transaction: %w", err)
+		}
+		return nil
+	})
+}
+
+// UpdateTransaction 更新账单
+func (d DB) UpdateTransaction(tid int64, transaction map[string]any, detailList []*OrmDetail, tags []string) error {
+	fields := make(map[string]any, len(transaction)+1)
+	for k, v := range transaction {
+		fields[k] = v
+	}
+	delete(fields, "create_time")
+
+	if v, ok := fields["occ_at"]; ok {
+		occAt, ok := v.(int64)
+		if !ok {
+			return fmt.Errorf("invalid occ_at type: %T", v)
+		}
+		if err := validateOccAt(occAt); err != nil {
+			return err
+		}
+	}
+
+	tags = normalizeTags(tags)
+
+	return d.db.Transaction(func(tx *gorm.DB) error {
+		if err := ensureTransactionOwned(tx, d.instanceId, tid); err != nil {
+			return err
+		}
+
+		if len(fields) > 0 {
+			fields["update_time"] = time.Now().UnixMilli()
+			if err := tx.Model(&OrmTransaction{}).
+				Where("instance_id = ? AND kid = ?", d.instanceId, tid).
+				Updates(fields).Error; err != nil {
+				return fmt.Errorf("update transaction: %w", err)
+			}
+		}
+
+		// 明细
+		if err := replaceDetails(tx, tid, detailList); err != nil {
+			return err
+		}
+
+		// 标签
+		if err := replaceTags(tx, d.instanceId, tid, tags, time.Now().UnixMilli()); err != nil {
+			return err
+		}
+
+		return nil
 	})
 }
 
@@ -62,67 +230,6 @@ func FindTransactionForUser(instanceId string, transactionId int64) ([]*OrmTrans
 	r := db.Model(&OrmTransaction{}).
 		Where("instance_id = ? AND kid = ?", instanceId, transactionId).Find(&detail)
 	return detail, r.Error
-}
-
-// DeleteTransaction 删除记账单
-func DeleteTransaction(instanceId string, transactionId int64) error {
-	r := db.Model(&OrmTransaction{}).
-		Where("instance_id = ? AND kid = ?", instanceId, transactionId).Delete(&OrmTransaction{})
-	return r.Error
-}
-
-// UpdateTransaction 更新账单
-// transaction: 主表待更新字段map
-// detailList == nil ：不操作明细表，保留原有明细
-// detailList != nil：先删除当前交易所有明细；len=0清空明细，len>0替换明细
-func (d DB) UpdateTransaction(tid int64, transaction map[string]any, detailList []*OrmDetail) error {
-	err := d.db.Transaction(func(tx *gorm.DB) error {
-		if len(transaction) > 0 {
-			delete(transaction, "create_time")
-			transaction["update_time"] = time.Now().UnixMilli()
-
-			if v, ok := transaction["occ_at"]; ok {
-				occAt, ok := v.(int64)
-				if !ok {
-					return fmt.Errorf("invalid occ_at type: %T", v)
-				}
-				if err := validateOccAt(occAt); err != nil {
-					return err
-				}
-			}
-
-			if err := tx.Model(&OrmTransaction{}).
-				Where("instance_id = ? AND kid = ?", d.instanceId, tid).
-				Updates(transaction).Error; err != nil {
-				return err
-			}
-		}
-
-		if detailList != nil {
-			if err := tx.Where("transaction_id = ?", tid).
-				Delete(&OrmDetail{}).Error; err != nil {
-				return err
-			}
-			if len(detailList) > 0 {
-				if err := tx.Create(detailList).Error; err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	})
-	return err
-}
-
-func FindTransactionAll(instanceId string, limit, offset int, count *int64) ([]*OrmTransaction, error) {
-	var detail []*OrmTransaction
-	err := db.Model(&OrmTransaction{}).
-		Where("instance_id = ?", instanceId).
-		Count(count).Order("occ_at DESC").
-		Limit(limit).Offset(offset).
-		Find(&detail).Error
-
-	return detail, err
 }
 
 // GetBillById 查询账单
@@ -145,10 +252,8 @@ type TransactionFilter struct {
 	MaxAmount  *decimal.Decimal // 含
 	Keyword    *string
 	Direction  *int8
-
-	Limit  int
-	Offset int
-
+	Limit      int
+	Offset     int
 	SortColumn string // "occ_at" | "amount" | "create_time"
 	SortOrder  string // "ASC" | "DESC"
 }

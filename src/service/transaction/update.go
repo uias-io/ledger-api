@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
@@ -28,7 +29,8 @@ type ReqUpdateTransaction struct {
 	Amount  *decimal.Decimal `json:"amount,omitempty"`   // 金额 0.0000
 	Remark  *string          `json:"remark,omitempty"`   // 备注
 	Total   *int8            `json:"total,omitempty"`    // 是否计入本月收支，1：计入；0：不计入
-	Detail  *[]ReqDetailItem `json:"detail,omitempty"`
+	Detail  *[]ReqDetailItem `json:"detail,omitempty"`   // 账目明细
+	Tags    []string         `json:"tags"`               // 标签名称数组
 }
 
 // BuildTransUpdateMap 只提取主交易表字段；occ_time/occ_at 成对写入
@@ -79,6 +81,7 @@ func ConvertToOrmDetail(tid int64, items []ReqDetailItem) ([]*models.OrmDetail, 
 		}
 		list = append(list, &row)
 	}
+	// 空数组表示"清空明细"，返回非 nil 空切片以区别于 nil
 	if list == nil {
 		list = make([]*models.OrmDetail, 0)
 	}
@@ -95,7 +98,6 @@ func validateUpdateDetailTotal(instanceId string, tid int64, reqAmount *decimal.
 		return nil
 	}
 
-	// 确定用于比较的金额
 	amount := reqAmount
 	if amount == nil {
 		billList, err := models.GetBillById(instanceId, tid)
@@ -103,7 +105,7 @@ func validateUpdateDetailTotal(instanceId string, tid int64, reqAmount *decimal.
 			return fmt.Errorf("query transaction for amount failed: %w", err)
 		}
 		if len(billList) == 0 {
-			return fmt.Errorf("transaction not found")
+			return models.ErrTransactionNotFound
 		}
 		a := billList[0].Amount
 		amount = &a
@@ -169,7 +171,7 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			}
 		}
 
-		if len(transMap) == 0 && detailList == nil {
+		if len(transMap) == 0 && detailList == nil && req.Tags == nil {
 			c.JSON(http.StatusBadRequest,
 				answer.ResBody(answer.EcodeInvalidRequestError, "no fields to update", nil))
 			return
@@ -178,7 +180,7 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 		// 明细总价校验：本次操作了明细才校验
 		if err := validateUpdateDetailTotal(instanceId, tid, req.Amount, detailList); err != nil {
 			klog.Warnf("validate detail total failed: %v", err)
-			if err.Error() == "transaction not found" {
+			if errors.Is(err, models.ErrTransactionNotFound) {
 				c.JSON(http.StatusNotFound,
 					answer.ResBody(answer.EcodeInvalidRequestError, "transaction not found", nil))
 				return
@@ -196,8 +198,13 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		if err := dao.UpdateTransaction(tid, transMap, detailList); err != nil {
+		if err := dao.UpdateTransaction(tid, transMap, detailList, req.Tags); err != nil {
 			klog.Error("dao UpdateTransaction failed", "err", err)
+			if errors.Is(err, models.ErrTransactionNotFound) {
+				c.JSON(http.StatusNotFound,
+					answer.ResBody(answer.EcodeInvalidRequestError, "transaction not found", nil))
+				return
+			}
 			if isInvalidOccAt(err) {
 				c.JSON(http.StatusBadRequest,
 					answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", nil))

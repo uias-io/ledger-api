@@ -34,22 +34,22 @@ func AppRoute(h *server.Hertz) {
 	h.GET("/v1/category", apc("ledger:category:list"), category.SelectCategory())                       // 查询分类 √
 	h.PATCH("/v1/category/:id", apc("ledger:category:update"), category.UpdateCategory())               // 修改分类
 
-	h.POST("/v1/transactions", apc("ledger:transaction:create"), transaction.CreateTransaction())       // 添加记账流水 √
-	h.GET("/v1/transactions", apc("ledger:transaction:list"), transaction.SelectTransaction())          // 查询记账流水 √
-	h.PATCH("/v1/transactions/:id", apc("ledger:transaction:update"), transaction.UpdateTransaction())  // 修改
-	h.DELETE("/v1/transactions/:id", apc("ledger:transaction:delete"), transaction.DeleteTransaction()) // 删除 √
-	h.GET("/v1/transactions/:id", apc("ledger:transaction:list"), transaction.BillDetails())            // 账单详情ledger:bill:get
+	h.POST("/v1/transactions", apc("ledger:bill:create"), transaction.CreateTransaction())       // 添加记账流水 √
+	h.GET("/v1/transactions", apc("ledger:bill:list"), transaction.SelectTransaction())          // 查询记账流水 √
+	h.PATCH("/v1/transactions/:id", apc("ledger:bill:update"), transaction.UpdateTransaction())  // 修改
+	h.DELETE("/v1/transactions/:id", apc("ledger:bill:delete"), transaction.DeleteTransaction()) // 删除 √
+	h.GET("/v1/transactions/:id", apc("ledger:bill:get"), transaction.BillDetails())             // 账单详情ledger:bill:get
+	h.GET("/v1/bill/:id", apc("ledger:bill:get"), transaction.BillDetails())                     // 账单详情ledger:bill:get
 
-	h.GET("/v1/bill/:id", apc("ledger:transaction:list"), transaction.BillDetails()) // 账单详情ledger:bill:get
+	h.GET("/v1/tags/hot", apc("ledger:tag:list"), tag.HotTags())       // √ 高频推荐标签
+	h.GET("/v1/tags/search", apc("ledger:tag:list"), tag.SearchTags()) // √ 模糊搜索历史标签
+	h.GET("/v1/bill/:id/tags", apc("ledger:bill:get"), tag.BillTags()) // √ 查询某条账单全部标签
 
-	h.POST("/v1/tag", apc("ledger:tag:create"), tag.CreateTag()) // 创建标签 √
-
-	h.GET("/v1/bill/statistic", apc("ledger:transaction:list"), statistic.StatOve()) // 统计收支,年，月，自定义
-
-	h.GET("/v1/stat/cycle-summary", apc("ledger:transaction:list"), statistic.CycleSummary()) // √ 月度汇总
-	h.GET("/v1/stat/chart/day", apc("ledger:transaction:list"), statistic.DayTrend())         // √ 日收支趋势
-	h.GET("/v1/stat/chart/month", apc("ledger:transaction:list"), statistic.MonthTrend())     // √ 月收支趋势
-	h.GET("/v1/stat/chart/year", apc("ledger:transaction:list"), statistic.YearTrend())       // √ 年收支趋势
-	h.GET("/v1/stat/category", apc("ledger:transaction:list"), statistic.CategoryPie())       // 收支分类构成
-	h.GET("/v1/stat/expense-rank", apc("ledger:transaction:list"), statistic.ExpenseRank())   // 本月支出分类TOP排行
+	h.GET("/v1/bill/statistic", apc("ledger:overview:list"), statistic.StatOve())          // √ 统计收支,年，月，自定义
+	h.GET("/v1/stat/cycle-summary", apc("ledger:overview:list"), statistic.CycleSummary()) // √ 月度汇总
+	h.GET("/v1/stat/chart/day", apc("ledger:overview:list"), statistic.DayTrend())         // √ 日收支趋势
+	h.GET("/v1/stat/chart/month", apc("ledger:overview:list"), statistic.MonthTrend())     // √ 月收支趋势
+	h.GET("/v1/stat/chart/year", apc("ledger:overview:list"), statistic.YearTrend())       // √ 年收支趋势
+	h.GET("/v1/stat/category", apc("ledger:overview:list"), statistic.CategoryPie())       // √ 收支分类构成
+	h.GET("/v1/stat/expense-rank", apc("ledger:overview:list"), statistic.ExpenseRank())   // √ 本月支出分类TOP排行
 }

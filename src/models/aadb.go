@@ -11,12 +11,12 @@ import (
 var db *gorm.DB
 
 const (
-	TableNameInstance    = "ledger_instance"
-	TableNameCategory    = "ledger_category"
-	TableNameCaterela    = "ledger_caterela"
-	TableNameTransaction = "ledger_transaction"
-	TableNameDetail      = "ledger_detail"
-	TableNameTag         = "ledger_tag"
+	TableNameInstance    = "ledger_instance"    // 实例表
+	TableNameCategory    = "ledger_category"    // 分类表
+	TableNameCaterela    = "ledger_caterela"    // 分类关联表
+	TableNameTransaction = "ledger_transaction" // 账单表
+	TableNameDetail      = "ledger_detail"      // 账单详情表
+	TableNameTagRel      = "ledger_tagrel"      // 标签表
 )
 
 // SetConnectPool 设置models层db连接
