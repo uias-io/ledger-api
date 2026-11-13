@@ -16,10 +16,10 @@ ledger:
     log:
         level: "INFO"
         output:
-            #stdout: "-"
-            file:
-                name: "/opt/service/ledger/logs/service.log"
-                maxsize: 1
-                maxbackups: 2
-                maxage: 3
-                compress: true
+            stdout: "-"
+#            file:
+#                name: "/opt/service/ledger/logs/service.log"
+#                maxsize: 1
+#                maxbackups: 2
+#                maxage: 3
+#                compress: true

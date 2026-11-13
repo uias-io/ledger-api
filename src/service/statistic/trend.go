@@ -3,15 +3,62 @@ package statistic
 import (
 	"context"
 	"fmt"
-	"github.com/cloudwego/hertz/pkg/app"
-	"github.com/shopspring/decimal"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
 	"ledger/src/slog"
 	"net/http"
 	"time"
+
+	"github.com/cloudwego/hertz/pkg/app"
+	"github.com/shopspring/decimal"
 )
+
+type trendAcc struct {
+	Income  decimal.Decimal
+	Expense decimal.Decimal
+}
+
+// aggregateTrend 按 layout 归桶累加，key 使用 time.Local
+func aggregateTrend(txs []*models.TrendTx, layout string) map[string]*trendAcc {
+	stat := make(map[string]*trendAcc)
+	for _, tx := range txs {
+		key := time.UnixMilli(tx.OccAt).In(time.Local).Format(layout)
+		a := stat[key]
+		if a == nil {
+			a = &trendAcc{}
+			stat[key] = a
+		}
+		if tx.Amount.IsPositive() {
+			a.Income = a.Income.Add(tx.Amount)
+		} else {
+			a.Expense = a.Expense.Add(tx.Amount.Abs())
+		}
+	}
+	return stat
+}
+
+// fillTrend 从 fromMs 到 toMs（不含）按粒度补零，layout 与 step 对应
+func fillTrend(fromMs, toMs int64, layout string, step func(time.Time) time.Time, stat map[string]*trendAcc) []map[string]string {
+	var fullList []map[string]string
+	current := time.UnixMilli(fromMs).In(time.Local)
+	endTime := time.UnixMilli(toMs).In(time.Local)
+
+	for current.Before(endTime) {
+		key := current.Format(layout)
+		inc, exp := decimal.Zero, decimal.Zero
+		if a, ok := stat[key]; ok {
+			inc, exp = a.Income, a.Expense
+		}
+		fullList = append(fullList, map[string]string{
+			"day":     key,
+			"income":  inc.Round(2).StringFixed(2),
+			"expense": exp.Round(2).StringFixed(2),
+		})
+		current = step(current)
+	}
+	return fullList
+}
 
 // DayTrend 日趋势
 func DayTrend() func(ctx context.Context, c *app.RequestContext) {
@@ -34,7 +81,7 @@ func DayTrend() func(ctx context.Context, c *app.RequestContext) {
 		fmt.Println(to)
 		fmt.Println(name)
 		fmt.Println(dayCnt)
-		//2. 获取DB实例
+
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
@@ -42,52 +89,23 @@ func DayTrend() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		result, err := dao.DayTrend(from, to)
+		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
-			klog.Errorf("统计收支失败: %v", err)
+			klog.Errorf("TrendTxs error %v", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
 			return
 		}
 
-		dataMap := make(map[string]*models.DayStat)
-		for _, item := range result {
-			dataMap[item.Day] = item
-		}
+		stat := aggregateTrend(txs, "2006-01-02")
+		list := fillTrend(from, to, "2006-01-02", func(t time.Time) time.Time {
+			return t.AddDate(0, 0, 1)
+		}, stat)
 
-		// 接口输出专用结构体
-		type DayStat struct {
-			Day     string `json:"day"`
-			Income  string `json:"income"`
-			Expense string `json:"expense"`
-		}
-		var fullList []DayStat
-
-		startTime := time.UnixMilli(from)
-		endTime := time.UnixMilli(to)
-		current := startTime
-		for current.Before(endTime) {
-			dayStr := current.Format("2006-01-02")
-			inc := decimal.Zero
-			exp := decimal.Zero
-			if exist, ok := dataMap[dayStr]; ok {
-				inc = exist.Income
-				exp = exist.Expense
-			}
-			// 强制保留2位小数,末尾不足自动补 0
-			ds := DayStat{
-				Day:     dayStr,
-				Income:  inc.Round(2).StringFixed(2),
-				Expense: exp.Round(2).StringFixed(2),
-			}
-			fullList = append(fullList, ds)
-			current = current.AddDate(0, 0, 1)
-		}
-
-		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, fullList))
+		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, list))
 	}
 }
 
-// MonthTrend 按月统计，补齐空白月份、强制两位小数
+// MonthTrend 按月统计，补齐空白月份
 func MonthTrend() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
@@ -108,63 +126,31 @@ func MonthTrend() func(ctx context.Context, c *app.RequestContext) {
 		fmt.Println(to)
 		fmt.Println(name)
 		fmt.Println(dayCnt)
-		// 获取DB实例
+
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
 			return
 		}
-		result, err := dao.MonthTrend(from, to)
+
+		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
-			klog.Errorf("按月统计收支失败: %v", err)
+			klog.Errorf("TrendTxs error %v", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
 			return
 		}
 
-		// 1. 数据库结果存入map，快速匹配
-		dataMap := make(map[string]*models.DayStat)
-		for _, item := range result {
-			dataMap[item.Day] = item
-		}
+		stat := aggregateTrend(txs, "2006-01")
+		list := fillTrend(from, to, "2006-01", func(t time.Time) time.Time {
+			return t.AddDate(0, 1, 0)
+		}, stat)
 
-		// 输出结构体，和日趋势格式完全统一
-		type OutputStat struct {
-			Day     string `json:"day"`
-			Income  string `json:"income"`
-			Expense string `json:"expense"`
-		}
-		var fullList []OutputStat
-
-		startTime := time.UnixMilli(from)
-		endTime := time.UnixMilli(to)
-		current := startTime
-
-		// 逐月循环生成连续年月 2006-01
-		for current.Before(endTime) {
-			monthStr := current.Format("2006-01")
-			inc := decimal.Zero
-			exp := decimal.Zero
-			if exist, ok := dataMap[monthStr]; ok {
-				inc = exist.Income
-				exp = exist.Expense
-			}
-			// 强制保留两位小数
-			item := OutputStat{
-				Day:     monthStr,
-				Income:  inc.Round(2).StringFixed(2),
-				Expense: exp.Round(2).StringFixed(2),
-			}
-			fullList = append(fullList, item)
-			// 月份+1
-			current = current.AddDate(0, 1, 0)
-		}
-
-		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, fullList))
+		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, list))
 	}
 }
 
-// YearTrend 按年统计，补齐空白年份、强制两位小数
+// YearTrend 按年统计，补齐空白年份
 func YearTrend() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
@@ -185,58 +171,26 @@ func YearTrend() func(ctx context.Context, c *app.RequestContext) {
 		fmt.Println(to)
 		fmt.Println(name)
 		fmt.Println(dayCnt)
-		// 获取DB实例
+
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
 			return
 		}
-		result, err := dao.YearTrend(from, to)
+
+		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
-			klog.Errorf("按年统计收支失败: %v", err)
+			klog.Errorf("TrendTxs error %v", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
 			return
 		}
 
-		// 1. 数据库结果存入map
-		dataMap := make(map[string]*models.DayStat)
-		for _, item := range result {
-			dataMap[item.Day] = item
-		}
+		stat := aggregateTrend(txs, "2006")
+		list := fillTrend(from, to, "2006", func(t time.Time) time.Time {
+			return t.AddDate(1, 0, 0)
+		}, stat)
 
-		// 输出结构体，和日/月格式统一
-		type OutputStat struct {
-			Day     string `json:"day"`
-			Income  string `json:"income"`
-			Expense string `json:"expense"`
-		}
-		var fullList []OutputStat
-
-		startTime := time.UnixMilli(from)
-		endTime := time.UnixMilli(to)
-		current := startTime
-
-		// 逐年循环生成完整年份 2006
-		for current.Before(endTime) {
-			yearStr := current.Format("2006")
-			inc := decimal.Zero
-			exp := decimal.Zero
-			if exist, ok := dataMap[yearStr]; ok {
-				inc = exist.Income
-				exp = exist.Expense
-			}
-			// 强制两位小数输出
-			item := OutputStat{
-				Day:     yearStr,
-				Income:  inc.Round(2).StringFixed(2),
-				Expense: exp.Round(2).StringFixed(2),
-			}
-			fullList = append(fullList, item)
-			// 年份+1
-			current = current.AddDate(1, 0, 0)
-		}
-
-		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, fullList))
+		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, list))
 	}
 }

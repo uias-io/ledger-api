@@ -53,7 +53,6 @@ type CategoryDetailResult struct {
 	ExpenseParentList []CategoryParentWithSub `json:"expenseParentList"`
 }
 
-// QueryCategoryMain 仅按大类汇总（现有表无冗余字段）
 // QueryCategoryMain 纯原生表结构，大类汇总查询
 func (d *DB) QueryCategoryMain(from, to int64) (*CategoryMainResult, error) {
 	type row struct {
@@ -64,11 +63,10 @@ func (d *DB) QueryCategoryMain(from, to int64) (*CategoryMainResult, error) {
 	}
 	var rows []row
 
-	// 手动指定表别名t，消除instance_id模糊字段报错
 	err := d.db.
 		Table("ledger_transaction t").
 		Where("t.instance_id = ?", d.instanceId).
-		Where("t.occ_at >= ? AND t.occ_at <= ?", from, to).
+		Where("t.occ_at >= ? AND t.occ_at < ?", from, to).
 		Joins("LEFT JOIN ledger_category self_cat ON t.category_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_caterela rel ON rel.child_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_category parent_cat ON " +
@@ -87,7 +85,6 @@ func (d *DB) QueryCategoryMain(from, to int64) (*CategoryMainResult, error) {
 		return nil, err
 	}
 
-	// 初始化空切片，避免json输出null
 	res := &CategoryMainResult{
 		IncomeList:  make([]CategoryMainItem, 0),
 		ExpenseList: make([]CategoryMainItem, 0),
@@ -121,11 +118,10 @@ func (d *DB) QueryCategoryDetail(from, to int64) (*CategoryDetailResult, error) 
 	}
 	var rows []row
 
-	// 关键修复：WHERE 使用 t.instance_id 明确指定交易表别名，消除模糊列
 	err := d.db.
 		Table("ledger_transaction t").
 		Where("t.instance_id = ?", d.instanceId).
-		Where("t.occ_at >= ? AND t.occ_at <= ?", from, to).
+		Where("t.occ_at >= ? AND t.occ_at < ?", from, to).
 		Joins("LEFT JOIN ledger_category self_cat ON t.category_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_caterela rel ON rel.child_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_category parent_cat ON " +
@@ -146,7 +142,6 @@ func (d *DB) QueryCategoryDetail(from, to int64) (*CategoryDetailResult, error) 
 		return nil, err
 	}
 
-	// 初始化空切片，避免JSON返回null
 	res := &CategoryDetailResult{
 		IncomeParentList:  make([]CategoryParentWithSub, 0),
 		ExpenseParentList: make([]CategoryParentWithSub, 0),
@@ -154,7 +149,6 @@ func (d *DB) QueryCategoryDetail(from, to int64) (*CategoryDetailResult, error) 
 	parentMap := make(map[int]*CategoryParentWithSub)
 
 	for _, r := range rows {
-		// 不存在则新建大类
 		if _, ok := parentMap[r.Pid]; !ok {
 			parentMap[r.Pid] = &CategoryParentWithSub{
 				ParentID:    r.Pid,
@@ -174,7 +168,6 @@ func (d *DB) QueryCategoryDetail(from, to int64) (*CategoryDetailResult, error) 
 		})
 	}
 
-	// 拆分收入/支出
 	for _, item := range parentMap {
 		if item.Direction == 1 {
 			res.IncomeParentList = append(res.IncomeParentList, *item)
@@ -211,6 +204,10 @@ type ExpenseRankResult struct {
 
 // QueryExpenseRank 收支分类排行，direction 1收入 2支出
 func (d *DB) QueryExpenseRank(from, to int64, topNum int, direction int) (*ExpenseRankResult, error) {
+	if direction != 1 && direction != 2 {
+		direction = 2
+	}
+
 	type row struct {
 		Pid      int     `gorm:"column:pid"`
 		PName    string  `gorm:"column:pname"`
@@ -221,13 +218,12 @@ func (d *DB) QueryExpenseRank(from, to int64, topNum int, direction int) (*Expen
 	err := d.db.
 		Table("ledger_transaction t").
 		Where("t.instance_id = ?", d.instanceId).
-		Where("t.occ_at >= ? AND t.occ_at <= ?", from, to).
+		Where("t.occ_at >= ? AND t.occ_at < ?", from, to).
 		Joins("LEFT JOIN ledger_category self_cat ON t.category_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_caterela rel ON rel.child_id = self_cat.kid").
 		Joins("LEFT JOIN ledger_category parent_cat ON "+
 			"(self_cat.layer=2 AND rel.parent_id = parent_cat.kid) OR "+
 			"(self_cat.layer=1 AND self_cat.kid = parent_cat.kid)").
-		// 动态传入收支类型，不再写死2
 		Where("parent_cat.direction = ?", direction).
 		Select(`
 			parent_cat.kid pid,
@@ -260,29 +256,17 @@ type SouZhiResult struct {
 	Expense decimal.Decimal `gorm:"column:expense" json:"expense"` // 总支出（正数）
 }
 
-// CountSouZhi 一个函数实现 按年/按月/自定义日期 统计收支
-func (d *DB) CountSouZhi(timeType string, from, to string) (*SouZhiResult, error) {
+// CountSouZhi 按毫秒区间统计收支，统一使用 occ_at
+func (d *DB) CountSouZhi(fromMs, toMs int64) (*SouZhiResult, error) {
 	var res SouZhiResult
 
-	// 基础DB
-	db := d.WithInstance().Table("ledger_transaction")
-
-	// ====================================================
-	// 把结束日期 +1 天，并用 < 代替 <=，实现日期闭区间全覆盖
-	// 例如：2026-03-31 → 变成 2026-04-01 00:00:00
-	// 这样能查到 2026-03-31 全天所有数据
-	// ====================================================
-	db = db.Where(`
-		STR_TO_DATE(occ_time, '%Y-%m-%dT%H:%i:%s+0800') >= ? 
-		AND 
-		STR_TO_DATE(occ_time, '%Y-%m-%dT%H:%i:%s+0800') < ? + INTERVAL 1 DAY
-	`, from, to)
-
-	// 统计收入、支出
-	err := db.Select(`
-		IFNULL(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS income,
-		IFNULL(ABS(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END)), 0) AS expense
-	`).Scan(&res).Error
+	err := d.WithInstance().
+		Table(TableNameTransaction).
+		Where("occ_at >= ? AND occ_at < ?", fromMs, toMs).
+		Select(`
+			IFNULL(SUM(CASE WHEN amount > 0 THEN amount ELSE 0 END), 0) AS income,
+			IFNULL(ABS(SUM(CASE WHEN amount < 0 THEN amount ELSE 0 END)), 0) AS expense
+		`).Scan(&res).Error
 
 	return &res, err
 }

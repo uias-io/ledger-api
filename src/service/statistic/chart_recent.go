@@ -2,6 +2,7 @@ package statistic
 
 import (
 	"context"
+
 	"github.com/cloudwego/hertz/pkg/app"
 )
 
