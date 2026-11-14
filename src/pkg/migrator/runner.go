@@ -2,22 +2,15 @@ package migrator
 
 import "fmt"
 
-// RunWithMigrator orchestrates the database migration process
+// RunWithMigrator orchestrates the database migration process.
+//
+// Up() is called only once: it performs a single batched query inside filterPending,
+// which both determines pending scripts and executes them, avoiding duplicate full scans.
 func RunWithMigrator(m Migrator) error {
 	m.Logger().Infof("Checking for pending database migrations...")
-	hasPending, err := m.HasPending()
-	if err != nil {
-		return fmt.Errorf("failed to check for pending migrations: %w", err)
-	}
 
-	if hasPending {
-		m.Logger().Infof("Pending migrations detected. Applying upgrade scripts...")
-		if err := m.Up(); err != nil {
-			return fmt.Errorf("migration upgrade failed: %w", err)
-		}
-		m.Logger().Infof("Database upgrade completed successfully")
-	} else {
-		m.Logger().Infof("No pending migrations found")
+	if err := m.Up(); err != nil {
+		return fmt.Errorf("migration upgrade failed: %w", err)
 	}
 
 	latest, err := m.LatestVersion()

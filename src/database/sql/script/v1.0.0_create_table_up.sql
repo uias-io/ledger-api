@@ -40,7 +40,6 @@ CREATE TABLE IF NOT EXISTS `ledger_category`  (
   `layer` tinyint(1) NOT NULL, -- 1大类，2子类
   `create_time` bigint(19) NOT NULL, -- 创建时间
   PRIMARY KEY (`kid`) USING BTREE,
-  UNIQUE INDEX `uk_instance_category_direction`(`instance_id`, `name`, `direction`) USING BTREE,
   INDEX `fk_category_instance`(`instance_id`) USING BTREE,
   CONSTRAINT `fk_category_instance` FOREIGN KEY (`instance_id`) REFERENCES `ledger_instance` (`instance_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB AUTO_INCREMENT = 1000000 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC; -- 收支分类表

@@ -1,3 +1,2 @@
 -- 收入类一级分类（direction=1），ID段：5001-9999（与支出类1001-5000隔离）
 -- 公共分类移除
-SELECT * FROM ledger_instance;

@@ -17,6 +17,21 @@ type script struct {
 	path    string
 }
 
+// scriptNamePattern matches migration script filenames and captures both
+// the semantic version (group 1) and the direction (group 2).
+// Compiled once at package init to avoid repeated compilation in ListScripts.
+var scriptNamePattern = regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)_.+_(up|down)\.sql$`)
+
+// matchScript reports whether name matches a migration script filename
+// for the given direction, returning the captured version if so.
+func matchScript(name, direction string) (string, bool) {
+	m := scriptNamePattern.FindStringSubmatch(name)
+	if m == nil || m[2] != direction {
+		return "", false
+	}
+	return m[1], true
+}
+
 // ------------------------------
 // Local File Provider (for development environment)
 // ------------------------------
@@ -30,27 +45,26 @@ func NewLocalFileProvider(baseDir string) *LocalFileProvider {
 }
 
 func (p *LocalFileProvider) ListScripts(direction string) ([]script, error) {
-	pattern := regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)_.+_` + direction + `\.sql$`)
-	var scripts []script
-
 	entries, err := os.ReadDir(p.baseDir)
 	if err != nil {
 		return nil, err
 	}
 
+	var scripts []script
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if pattern.MatchString(name) {
-			version := pattern.FindStringSubmatch(name)[1]
-			scripts = append(scripts, script{
-				version: version,
-				name:    name,
-				path:    filepath.Join(p.baseDir, name),
-			})
+		version, ok := matchScript(name, direction)
+		if !ok {
+			continue
 		}
+		scripts = append(scripts, script{
+			version: version,
+			name:    name,
+			path:    filepath.Join(p.baseDir, name),
+		})
 	}
 	return scripts, nil
 }
@@ -77,27 +91,26 @@ func NewEmbeddedScriptProvider(baseDir string, fs embed.FS) *EmbeddedScriptProvi
 }
 
 func (p *EmbeddedScriptProvider) ListScripts(direction string) ([]script, error) {
-	pattern := regexp.MustCompile(`^(v[0-9]+\.[0-9]+\.[0-9]+)_.+_` + direction + `\.sql$`)
-	var scripts []script
-
 	entries, err := fs.ReadDir(p.fs, p.baseDir)
 	if err != nil {
 		return nil, err
 	}
 
+	var scripts []script
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if pattern.MatchString(name) {
-			version := pattern.FindStringSubmatch(name)[1]
-			scripts = append(scripts, script{
-				version: version,
-				name:    name,
-				path:    path.Join(p.baseDir, name),
-			})
+		version, ok := matchScript(name, direction)
+		if !ok {
+			continue
 		}
+		scripts = append(scripts, script{
+			version: version,
+			name:    name,
+			path:    path.Join(p.baseDir, name),
+		})
 	}
 	return scripts, nil
 }
