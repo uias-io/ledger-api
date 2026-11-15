@@ -2,7 +2,6 @@ package statistic
 
 import (
 	"context"
-	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
@@ -67,32 +66,32 @@ func DayTrend() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
 
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 
 		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
 			klog.Errorf("TrendTxs error %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 
@@ -112,32 +111,32 @@ func MonthTrend() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
 
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 
 		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
 			klog.Errorf("TrendTxs error %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 
@@ -157,32 +156,32 @@ func YearTrend() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
 
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 
 		txs, err := dao.TrendTxs(from, to)
 		if err != nil {
 			klog.Errorf("TrendTxs error %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 

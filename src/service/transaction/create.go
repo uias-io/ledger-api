@@ -2,6 +2,7 @@ package transaction
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 // Detail 账目明细
@@ -68,6 +70,21 @@ func validateDetailTotal(amount decimal.Decimal, details []*Detail) error {
 	return nil
 }
 
+// validateAmountDirection 校验金额方向与分类方向一致
+// amount<0 → 支出(direction=2)，amount>0 → 收入(direction=1)，amount=0 不校验
+func validateAmountDirection(amount decimal.Decimal, direction int8) error {
+	if amount.IsZero() {
+		return nil
+	}
+	if amount.IsNegative() && direction != 2 {
+		return fmt.Errorf("negative amount requires an expense category")
+	}
+	if amount.IsPositive() && direction != 1 {
+		return fmt.Errorf("positive amount requires an income category")
+	}
+	return nil
+}
+
 // toOrmDetails 将请求明细转换为 ORM 明细
 func toOrmDetails(details []*Detail) []*models.OrmDetail {
 	if len(details) == 0 {
@@ -112,7 +129,7 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err != nil {
 			klog.Errorf("parse occ_time failed %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
+				answer.ResBody(answer.EcodeTransactionInvalidOccTime, "invalid occ_time", ""))
 			return
 		}
 
@@ -120,8 +137,30 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err := validateDetailTotal(ReqData.Amount, ReqData.Detail); err != nil {
 			klog.Warnf("validate detail total failed: %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError,
+				answer.ResBody(answer.EcodeTransactionDetailExceed,
 					"detail total must not exceed amount", ""))
+			return
+		}
+
+		// 分类必须存在且属于当前实例，且方向与金额符号一致
+		categ, err := models.FindCategoryById(instanceId, ReqData.Cid)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				klog.Warnf("category not found cid=%d instance=%s", ReqData.Cid, instanceId)
+				c.JSON(http.StatusBadRequest,
+					answer.ResBody(answer.EcodeCategoryNotFound,
+						"category not found", ""))
+				return
+			}
+			klog.Errorf("find category by id failed %v", err)
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "Internal server error.", ""))
+			return
+		}
+		if err := validateAmountDirection(ReqData.Amount, categ.Direction); err != nil {
+			klog.Warnf("validate amount direction failed: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeTransactionAmountDirection, err.Error(), ""))
 			return
 		}
 
@@ -147,7 +186,7 @@ func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			klog.Errorf("insert transaction failed %v", err)
 			if isInvalidOccAt(err) {
 				c.JSON(http.StatusBadRequest,
-					answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", ""))
+					answer.ResBody(answer.EcodeTransactionInvalidOccTime, "invalid occ_time", ""))
 				return
 			}
 			c.JSON(http.StatusInternalServerError,

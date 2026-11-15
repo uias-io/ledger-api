@@ -12,6 +12,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 )
 
+// TODO 待移除：ensureTransactionOwned
+
 func DeleteTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
@@ -34,7 +36,24 @@ func DeleteTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err := c.BindPath(&q); err != nil {
 			klog.Errorf("bind path failed %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "query error.", nil))
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid transaction id.", nil))
+			return
+		}
+
+		// server 层校验：交易必须存在且属于当前实例
+		billList, err := models.GetBillById(instanceId, q.TransactionId)
+		if err != nil {
+			klog.Errorf("get bill by id failed %v", err)
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError,
+					"Internal server error.", nil))
+			return
+		}
+		if len(billList) == 0 {
+			klog.Warnf("transaction not found id=%d instance=%s", q.TransactionId, instanceId)
+			c.JSON(http.StatusNotFound,
+				answer.ResBody(answer.EcodeTransactionNotFound,
+					"transaction not found.", nil))
 			return
 		}
 
@@ -50,7 +69,7 @@ func DeleteTransaction() func(ctx context.Context, c *app.RequestContext) {
 			if errors.Is(err, models.ErrTransactionNotFound) {
 				klog.Warnf("transaction not found id=%d instance=%s", q.TransactionId, instanceId)
 				c.JSON(http.StatusNotFound,
-					answer.ResBody(answer.EcodeInvalidRequestError,
+					answer.ResBody(answer.EcodeTransactionNotFound,
 						"transaction not found.", nil))
 				return
 			}

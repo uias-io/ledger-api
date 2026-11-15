@@ -3,7 +3,6 @@ package statistic
 import (
 	"context"
 	"errors"
-	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
@@ -29,7 +28,7 @@ type QueryArgs struct {
 
 // ResolveCycleRange 解析周期时间范围,优先 from/to，没有则根据 ct+td 自动生成
 func ResolveCycleRange(ct, td, from, to string) (start, end int64, name string, dayCnt int, err error) {
-	loc := time.Local // 服务器已挂本地时区
+	loc := time.Local
 
 	var a, b time.Time
 	if from != "" && to != "" {
@@ -41,7 +40,7 @@ func ResolveCycleRange(ct, td, from, to string) (start, end int64, name string, 
 		if err != nil {
 			return
 		}
-		b = b.AddDate(0, 0, 1) // 次日零点，左闭右开
+		b = b.AddDate(0, 0, 1)
 
 		name = from + "~" + to
 		dayCnt = int(b.Sub(a).Hours() / 24)
@@ -94,30 +93,30 @@ func CycleSummary() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 		result, err := dao.CycleSummary(from, to)
 		if err != nil {
 			klog.Errorf("统计收支失败: %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 		type S01StatResp struct {

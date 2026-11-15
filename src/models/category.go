@@ -53,7 +53,7 @@ func FindCategoryByType(t string) ([]*OrmCategory, error) {
 func FindCategoryById(instanceId string, kid int64) (*OrmCategory, error) {
 	var category *OrmCategory
 	r := db.Model(&OrmCategory{}).
-		Where("instance_id is NULL OR instance_id = ?", instanceId).
+		Where("instance_id = ?", instanceId).
 		Where("kid = ?", kid).
 		First(&category)
 	return category, r.Error
@@ -63,7 +63,7 @@ func FindCategoryById(instanceId string, kid int64) (*OrmCategory, error) {
 func FindCategoryByUser(instanceId string, Direction int8) ([]*OrmCategory, error) {
 	var category []*OrmCategory
 	r := db.Model(&OrmCategory{}).
-		Where("instance_id is NULL OR instance_id = ?", instanceId).
+		Where("instance_id = ?", instanceId).
 		Where("direction = ?", Direction).
 		Find(&category)
 	return category, r.Error
@@ -76,7 +76,7 @@ func GetCategoryWithRel(instanceId string, direction int8) ([]*CategoryWithRelRe
 	err := db.Table(TableNameCategory+" AS c").
 		Select(`c.kid, c.instance_id, c.name, c.direction, rel.parent_id AS pid, c.create_time`).
 		Joins("LEFT JOIN "+TableNameCaterela+" AS rel ON c.kid = rel.child_id").
-		Where("c.instance_id IS NULL OR c.instance_id = ?", instanceId).
+		Where("c.instance_id = ?", instanceId).
 		Where("c.direction = ?", direction).
 		Find(&results).Error
 
@@ -121,5 +121,16 @@ func UpdateCategory(title string, pid uint32) error {
 		"pid":         pid,
 		"update_time": time.Now().UnixMilli(),
 	})
+	return r.Error
+}
+
+// UpdateCategoryFields 按实例更新分类字段
+func UpdateCategoryFields(instanceId string, kid int64, fields map[string]any) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	r := db.Model(&OrmCategory{}).
+		Where("instance_id = ? AND kid = ?", instanceId, kid).
+		Updates(fields)
 	return r.Error
 }

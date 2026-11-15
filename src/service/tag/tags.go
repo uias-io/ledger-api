@@ -34,8 +34,7 @@ func HotTags() func(ctx context.Context, c *app.RequestContext) {
 		if v := c.Query("limit"); v != "" {
 			n, err := strconv.Atoi(v)
 			if err != nil || n <= 0 {
-				c.JSON(http.StatusBadRequest,
-					answer.ResBody(answer.EcodeInvalidRequestError, "invalid limit", nil))
+				c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidPagingParam, "invalid limit", nil))
 				return
 			}
 			if n > 50 {
@@ -47,8 +46,7 @@ func HotTags() func(ctx context.Context, c *app.RequestContext) {
 		list, err := models.ListHotTags(instanceId, limit)
 		if err != nil {
 			klog.Errorf("list hot tags failed: %v", err)
-			c.JSON(http.StatusInternalServerError,
-				answer.ResBody(answer.EcodeError, "Failed to get hot tags.", nil))
+			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "Failed to get hot tags.", nil))
 			return
 		}
 		if list == nil {
@@ -80,7 +78,7 @@ func SearchTags() func(ctx context.Context, c *app.RequestContext) {
 		keyword := strings.TrimSpace(c.Query("keyword"))
 		if keyword == "" {
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "keyword must not be empty", nil))
+				answer.ResBody(answer.EcodeQueryError, "keyword must not be empty", nil))
 			return
 		}
 
@@ -89,7 +87,7 @@ func SearchTags() func(ctx context.Context, c *app.RequestContext) {
 			n, err := strconv.Atoi(v)
 			if err != nil || n <= 0 {
 				c.JSON(http.StatusBadRequest,
-					answer.ResBody(answer.EcodeInvalidRequestError, "invalid limit", nil))
+					answer.ResBody(answer.EcodeInvalidPagingParam, "invalid limit", nil))
 				return
 			}
 			if n > 50 {
@@ -138,12 +136,12 @@ func BillTags() func(ctx context.Context, c *app.RequestContext) {
 		if err := c.BindPath(&q); err != nil {
 			klog.Errorf("bind path failed: %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid query parameter", nil))
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid query parameter", nil))
 			return
 		}
 		if q.BillId <= 0 {
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid bill id", nil))
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid bill id", nil))
 			return
 		}
 

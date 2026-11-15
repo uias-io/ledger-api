@@ -130,7 +130,7 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err != nil {
 			klog.Error(err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid paging parameter", ""))
+				answer.ResBody(answer.EcodeInvalidPagingParam, "invalid paging parameter", ""))
 			return
 		}
 
@@ -139,7 +139,7 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err := c.BindQuery(&q); err != nil {
 			klog.Errorf("bind query failed: %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid query parameter", ""))
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", ""))
 			return
 		}
 
@@ -148,7 +148,7 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if errMsg != "" {
 			klog.Warnf("invalid query: %s", errMsg)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, errMsg, ""))
+				answer.ResBody(answer.EcodeQueryError, errMsg, ""))
 			return
 		}
 
@@ -243,7 +243,7 @@ func BillDetails() func(ctx context.Context, c *app.RequestContext) {
 		var q Query
 		if err := c.BindPath(&q); err != nil {
 			klog.Errorf("bind path failed: %v", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "invalid query parameter", nil))
+			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidPathParam, "invalid bill id", nil))
 			return
 		}
 
@@ -255,7 +255,8 @@ func BillDetails() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 		if len(billList) == 0 {
-			c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, "bill not found", nil))
+			klog.Warnf("bill not found id=%d instance=%s", q.BillId, instanceId)
+			c.JSON(http.StatusNotFound, answer.ResBody(answer.EcodeTransactionNotFound, "bill not found", nil))
 			return
 		}
 		bill := billList[0] // 单条账单

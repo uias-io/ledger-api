@@ -16,7 +16,7 @@ import (
 func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
-		klog.Info("CreateCategory")
+		klog.Info("DeleteCategory")
 		userId := c.GetString("userId")
 		categoryId := c.Param("kid")
 		// 约束：有子分类的时候不能删除主类
@@ -29,37 +29,28 @@ func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		// TODO 系统策略提示无权限删除
+		// 分类必须存在且属于当前实例
 		categ, err := models.FindCategoryById(instanceId, strToInt64(categoryId))
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				klog.Errorf("category not found %v", err)
-				c.JSON(http.StatusBadRequest,
-					answer.ResBody(answer.EcodeError,
+				c.JSON(http.StatusNotFound,
+					answer.ResBody(answer.EcodeCategoryNotFound,
 						"category not found.", nil))
 				return
 			}
 
 			klog.Errorf("find category by id failed %v", err)
-			c.JSON(http.StatusBadRequest,
+			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError,
-					"Failed to get your account info. Try again later.", nil))
-			return
-		}
-
-		// 系统分类不能删除
-		if categ.InstanceId == "" {
-			klog.Error("system category cannot be deleted")
-			c.JSON(http.StatusForbidden,
-				answer.ResBody(answer.EcodeError,
-					"system category cannot be deleted.", nil))
+					"Internal server error.", nil))
 			return
 		}
 
 		_, err = models.DeleteCategory(instanceId, []int64{categ.Kid})
 		if err != nil {
 			klog.Errorf("delete category failed %v", err)
-			c.JSON(http.StatusBadRequest,
+			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError,
 					"delete category failed.", nil))
 			return

@@ -10,9 +10,11 @@ import (
 	"ledger/src/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
 )
 
 type ReqDetailItem struct {
@@ -121,6 +123,48 @@ func validateUpdateDetailTotal(instanceId string, tid int64, reqAmount *decimal.
 	return nil
 }
 
+// resolveUpdateCategory 确认本次/现有分类归属，并返回分类方向
+// 若本次传了 Cid，则查库确认存在且属于实例；否则查现有交易拿分类
+func resolveUpdateCategory(instanceId string, tid int64, reqCid *int64) (int8, error) {
+	var cid int64
+	if reqCid != nil {
+		cid = *reqCid
+	} else {
+		billList, err := models.GetBillById(instanceId, tid)
+		if err != nil {
+			return 0, fmt.Errorf("query transaction failed: %w", err)
+		}
+		if len(billList) == 0 {
+			return 0, models.ErrTransactionNotFound
+		}
+		cid = billList[0].CategoryId
+	}
+
+	categ, err := models.FindCategoryById(instanceId, cid)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 0, fmt.Errorf("category not found")
+		}
+		return 0, err
+	}
+	return categ.Direction, nil
+}
+
+// resolveUpdateAmount 本次传入金额优先，否则查库取现有金额
+func resolveUpdateAmount(instanceId string, tid int64, reqAmount *decimal.Decimal) (decimal.Decimal, error) {
+	if reqAmount != nil {
+		return *reqAmount, nil
+	}
+	billList, err := models.GetBillById(instanceId, tid)
+	if err != nil {
+		return decimal.Zero, fmt.Errorf("query transaction failed: %w", err)
+	}
+	if len(billList) == 0 {
+		return decimal.Zero, models.ErrTransactionNotFound
+	}
+	return billList[0].Amount, nil
+}
+
 func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
@@ -139,7 +183,7 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err != nil {
 			klog.Error(err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid transaction id", nil))
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid transaction id", nil))
 			return
 		}
 
@@ -157,7 +201,7 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 		if err != nil {
 			klog.Error("build trans update map error", "err", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", nil))
+				answer.ResBody(answer.EcodeTransactionInvalidOccTime, "invalid occ_time", nil))
 			return
 		}
 
@@ -173,8 +217,49 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 
 		if len(transMap) == 0 && detailList == nil && req.Tags == nil {
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError, "no fields to update", nil))
+				answer.ResBody(answer.EcodeNoFieldsToUpdate, "no fields to update", nil))
 			return
+		}
+
+		// 分类存在 + 归属 + 方向一致性（仅当本次改动金额或分类时才校验）
+		if req.Cid != nil || req.Amount != nil {
+			direction, err := resolveUpdateCategory(instanceId, tid, req.Cid)
+			if err != nil {
+				klog.Warnf("resolve category failed: %v", err)
+				if errors.Is(err, models.ErrTransactionNotFound) {
+					c.JSON(http.StatusNotFound,
+						answer.ResBody(answer.EcodeTransactionNotFound, "transaction not found", nil))
+					return
+				}
+				if strings.Contains(err.Error(), "category not found") {
+					c.JSON(http.StatusBadRequest,
+						answer.ResBody(answer.EcodeCategoryNotFound, "category not found", nil))
+					return
+				}
+				c.JSON(http.StatusInternalServerError,
+					answer.ResBody(answer.EcodeError, "Internal server error.", nil))
+				return
+			}
+
+			amount, err := resolveUpdateAmount(instanceId, tid, req.Amount)
+			if err != nil {
+				klog.Errorf("resolve amount failed: %v", err)
+				if errors.Is(err, models.ErrTransactionNotFound) {
+					c.JSON(http.StatusNotFound,
+						answer.ResBody(answer.EcodeTransactionNotFound, "transaction not found", nil))
+					return
+				}
+				c.JSON(http.StatusInternalServerError,
+					answer.ResBody(answer.EcodeError, "Internal server error.", nil))
+				return
+			}
+
+			if err := validateAmountDirection(amount, direction); err != nil {
+				klog.Warnf("validate amount direction failed: %v", err)
+				c.JSON(http.StatusBadRequest,
+					answer.ResBody(answer.EcodeTransactionAmountDirection, err.Error(), nil))
+				return
+			}
 		}
 
 		// 明细总价校验：本次操作了明细才校验
@@ -182,11 +267,11 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			klog.Warnf("validate detail total failed: %v", err)
 			if errors.Is(err, models.ErrTransactionNotFound) {
 				c.JSON(http.StatusNotFound,
-					answer.ResBody(answer.EcodeInvalidRequestError, "transaction not found", nil))
+					answer.ResBody(answer.EcodeTransactionNotFound, "transaction not found", nil))
 				return
 			}
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError,
+				answer.ResBody(answer.EcodeTransactionDetailExceed,
 					"detail total must not exceed amount", nil))
 			return
 		}
@@ -202,12 +287,12 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 			klog.Error("dao UpdateTransaction failed", "err", err)
 			if errors.Is(err, models.ErrTransactionNotFound) {
 				c.JSON(http.StatusNotFound,
-					answer.ResBody(answer.EcodeInvalidRequestError, "transaction not found", nil))
+					answer.ResBody(answer.EcodeTransactionNotFound, "transaction not found", nil))
 				return
 			}
 			if isInvalidOccAt(err) {
 				c.JSON(http.StatusBadRequest,
-					answer.ResBody(answer.EcodeInvalidRequestError, "invalid occ_time", nil))
+					answer.ResBody(answer.EcodeTransactionInvalidOccTime, "invalid occ_time", nil))
 				return
 			}
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "update failed", nil))

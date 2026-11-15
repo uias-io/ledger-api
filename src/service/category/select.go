@@ -62,7 +62,7 @@ func SelectCategory() func(ctx context.Context, c *app.RequestContext) {
 		if err != nil {
 			klog.Errorf("param bind failed: %v", err)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError,
+				answer.ResBody(answer.EcodeQueryError,
 					"Failed to validate request parameters. Please check your input format.", ""))
 			return
 		}
@@ -70,7 +70,7 @@ func SelectCategory() func(ctx context.Context, c *app.RequestContext) {
 		if query.Direction != 1 && query.Direction != 2 {
 			klog.Warnf("invalid direction: %d (valid: 1,2)", query.Direction)
 			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeInvalidRequestError,
+				answer.ResBody(answer.EcodeCategoryInvalidDirection,
 					"Invalid direction parameter. Allowed values are 1 (income) or 2 (expense).", ""))
 			return
 		}

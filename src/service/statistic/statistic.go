@@ -2,7 +2,6 @@ package statistic
 
 import (
 	"context"
-	"fmt"
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
@@ -29,7 +28,8 @@ func StatOve() func(ctx context.Context, c *app.RequestContext) {
 		case "s02": // 分类统计
 			// ...
 		default:
-			// ...
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid overview type", nil))
 		}
 	}
 }
@@ -47,7 +47,8 @@ func S01(c *app.RequestContext, pt, from, to string) {
 		case "custom":
 			from = now.Format("2006-01-02")
 		default:
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeError, "不支持的时间类型", nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "unsupported period type", nil))
 			return
 		}
 	}
@@ -63,36 +64,37 @@ func S01(c *app.RequestContext, pt, from, to string) {
 	// 关键：ct/td 与 from/to 二选一，不能同时传
 	switch pt {
 	case "year":
-		// 只走周期通道，td=YYYY
 		startMs, endMs, _, _, err = ResolveCycleRange("year", from, "", "")
 	case "month":
-		// 只走周期通道，td=YYYY-MM
 		startMs, endMs, _, _, err = ResolveCycleRange("month", from, "", "")
 	case "custom":
-		// 只走自定义通道，from/to=YYYY-MM-DD
 		startMs, endMs, _, _, err = ResolveCycleRange("", "", from, to)
 	default:
-		c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeError, "不支持的时间类型", nil))
+		c.JSON(http.StatusBadRequest,
+			answer.ResBody(answer.EcodeQueryError, "unsupported period type", nil))
 		return
 	}
 
 	if err != nil {
-		klog.Errorf("ResolveCycleRange err %v", err)
-		c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+		klog.Warnf("ResolveCycleRange err %v", err)
+		c.JSON(http.StatusBadRequest,
+			answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 		return
 	}
 
 	dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 	if err != nil {
 		klog.Errorf("NewDBModel error %s", err)
-		c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+		c.JSON(http.StatusInternalServerError,
+			answer.ResBody(answer.EcodeError, "internal error", nil))
 		return
 	}
 
 	result, err := dao.CountSouZhi(startMs, endMs)
 	if err != nil {
 		klog.Errorf("统计收支失败: %v", err)
-		c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+		c.JSON(http.StatusInternalServerError,
+			answer.ResBody(answer.EcodeError, "statistic failed", nil))
 		return
 	}
 
@@ -115,30 +117,30 @@ func CategoryPie() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 		result, err := dao.QueryCategoryStat(from, to, req.Lg)
 		if err != nil {
 			klog.Errorf("统计收支失败: %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, result))
@@ -152,30 +154,30 @@ func ExpenseRank() func(ctx context.Context, c *app.RequestContext) {
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, err.Error(), nil))
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeQueryError, "invalid query parameter", nil))
 			return
 		}
-		from, to, name, dayCnt, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
+		from, to, _, _, err := ResolveCycleRange(req.Ct, req.Td, req.From, req.To)
 		if err != nil {
-			klog.Error("ResolveCycleRange err", err)
-			c.JSON(http.StatusBadRequest, answer.ResBody(answer.EcodeInvalidRequestError, "时间参数错误", nil))
+			klog.Warnf("ResolveCycleRange err: %v", err)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidTimeRange, "invalid time range", nil))
 			return
 		}
-		fmt.Println(from)
-		fmt.Println(to)
-		fmt.Println(name)
-		fmt.Println(dayCnt)
 
 		dao, err := models.NewDBModel(c.GetString(constants.InstanceIdKey))
 		if err != nil {
 			klog.Errorf("NewDBModel error %s", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, err.Error(), nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "internal error", nil))
 			return
 		}
 		result, err := dao.QueryExpenseRank(from, to, 10, req.Dt)
 		if err != nil {
 			klog.Errorf("统计收支失败: %v", err)
-			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "统计失败", nil))
+			c.JSON(http.StatusInternalServerError,
+				answer.ResBody(answer.EcodeError, "statistic failed", nil))
 			return
 		}
 		c.JSON(http.StatusOK, answer.ResBody(answer.EcodeOK, nil, result))
