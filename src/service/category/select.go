@@ -14,12 +14,12 @@ import (
 type RespPayload struct {
 	Id       int64          `json:"id"`                 // 主键ID
 	Name     string         `json:"name"`               // 分类名称
+	Sort     int            `json:"sort"`               // 同层排序值
 	Children []*RespPayload `json:"children,omitempty"` // 子类
 }
 
 // ConvertToTree 将OrmCategory列表转换为树形Payload结构
 func ConvertToTree(categories []*models.CategoryWithRelResult) []*RespPayload {
-	// 创建ID到Payload指针的映射
 	nodeMap := make(map[int64]*RespPayload)
 	var roots []*RespPayload
 
@@ -28,6 +28,7 @@ func ConvertToTree(categories []*models.CategoryWithRelResult) []*RespPayload {
 		node := &RespPayload{
 			Id:       cat.Kid,
 			Name:     cat.Name,
+			Sort:     cat.Sort,
 			Children: []*RespPayload{},
 		}
 		nodeMap[cat.Kid] = node
@@ -39,11 +40,13 @@ func ConvertToTree(categories []*models.CategoryWithRelResult) []*RespPayload {
 
 		if cat.Pid == 0 {
 			roots = append(roots, currentNode)
+			continue
+		}
+
+		if parentNode, exists := nodeMap[cat.Pid]; exists {
+			parentNode.Children = append(parentNode.Children, currentNode)
 		} else {
-			// 找到父节点并添加到其子节点列表
-			if parentNode, exists := nodeMap[cat.Pid]; exists {
-				parentNode.Children = append(parentNode.Children, currentNode)
-			}
+			roots = append(roots, currentNode)
 		}
 	}
 	return roots
@@ -95,7 +98,7 @@ func SelectCategory() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		payload := map[string]interface{}{
+		payload := map[string]any{
 			"items": ConvertToTree(category),
 		}
 

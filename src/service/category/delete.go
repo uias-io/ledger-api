@@ -19,7 +19,14 @@ func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 		klog.Info("DeleteCategory")
 		userId := c.GetString("userId")
 		categoryId := c.Param("kid")
-		// 约束：有子分类的时候不能删除主类
+
+		kid := strToInt64(categoryId)
+		if kid <= 0 {
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid categoryId", ""))
+			return
+		}
+
 		instanceId, err := instance.GetInstanceId(userId)
 		if err != nil {
 			klog.Errorf("get instance id failed %v", err)
@@ -29,8 +36,7 @@ func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		// 分类必须存在且属于当前实例
-		categ, err := models.FindCategoryById(instanceId, strToInt64(categoryId))
+		categ, err := models.FindCategoryById(instanceId, kid)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				klog.Errorf("category not found %v", err)
@@ -39,7 +45,6 @@ func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 						"category not found.", nil))
 				return
 			}
-
 			klog.Errorf("find category by id failed %v", err)
 			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError,
@@ -47,8 +52,24 @@ func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		_, err = models.DeleteCategory(instanceId, []int64{categ.Kid})
-		if err != nil {
+		if categ.Layer == 1 {
+			childIds, err := models.FindChildrenIdsByParent(categ.Kid)
+			if err != nil {
+				klog.Errorf("find children ids failed %v", err)
+				c.JSON(http.StatusInternalServerError,
+					answer.ResBody(answer.EcodeError, "Internal server error.", nil))
+				return
+			}
+			if len(childIds) > 0 {
+				klog.Warnf("category %d has children, cannot delete", categ.Kid)
+				c.JSON(http.StatusBadRequest,
+					answer.ResBody(answer.EcodeCategoryHasChildren,
+						"category has children, cannot delete", ""))
+				return
+			}
+		}
+
+		if err := models.DeleteCategoryWithRel(instanceId, categ.Kid); err != nil {
 			klog.Errorf("delete category failed %v", err)
 			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError,

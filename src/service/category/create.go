@@ -89,7 +89,15 @@ func CreateCategorySub() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
 		userId := c.GetString("userId")
-		categoryId := c.Param("categoryId")
+
+		parentId := strToInt64(c.Param("categoryId"))
+		if parentId <= 0 {
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidPathParam,
+					"invalid categoryId in path", ""))
+			return
+		}
+
 		var reqData Category
 		if err := c.BindJSON(&reqData); err != nil {
 			klog.Errorf("bind json failed %v", err)
@@ -107,8 +115,8 @@ func CreateCategorySub() func(ctx context.Context, c *app.RequestContext) {
 					"Failed to get your account info. Try again later.", ""))
 			return
 		}
-		// 父分类必须存在且属于当前实例
-		categ, err := models.FindCategoryById(instanceId, strToInt64(categoryId))
+
+		categ, err := models.FindCategoryById(instanceId, parentId)
 		if err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				klog.Errorf("category not found %v", err)
@@ -117,7 +125,6 @@ func CreateCategorySub() func(ctx context.Context, c *app.RequestContext) {
 						"category not found.", nil))
 				return
 			}
-
 			klog.Errorf("find category by id failed %v", err)
 			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError,
@@ -125,17 +132,26 @@ func CreateCategorySub() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
+		// 不允许给子类再挂子类
+		if categ.Layer != 1 {
+			klog.Warnf("parent category is not layer1, kid=%d", categ.Kid)
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeSortCategoryMismatch,
+					"parent category is not a main category", ""))
+			return
+		}
+
 		now := common.CreateTimestamp()
 		cate := &models.OrmCategory{
 			InstanceId: instanceId,
 			Name:       reqData.Name,
-			Direction:  categ.Direction, // 二级分类要根据父类继承Direction
+			Direction:  categ.Direction, // 二级分类继承父类 Direction
 			Layer:      2,
 			CreateTime: now,
 		}
 
 		rela := &models.OrmCaterela{
-			ParentId:   strToInt64(categoryId),
+			ParentId:   parentId,
 			CreateTime: now,
 		}
 

@@ -22,7 +22,13 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
 		klog.Info("UpdateCategory")
 		userId := c.GetString("userId")
-		categoryId := c.Param("id")
+
+		kid := strToInt64(c.Param("id"))
+		if kid <= 0 {
+			c.JSON(http.StatusBadRequest,
+				answer.ResBody(answer.EcodeInvalidPathParam, "invalid category id", ""))
+			return
+		}
 
 		var req ReqUpdateCategory
 		if err := c.BindJSON(&req); err != nil {
@@ -43,8 +49,7 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 		}
 
 		// 分类必须存在且属于当前实例
-		categ, err := models.FindCategoryById(instanceId, strToInt64(categoryId))
-		if err != nil {
+		if _, err := models.FindCategoryById(instanceId, kid); err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				klog.Errorf("category not found %v", err)
 				c.JSON(http.StatusNotFound,
@@ -58,7 +63,6 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 					"Internal server error.", nil))
 			return
 		}
-		_ = categ
 
 		fields := make(map[string]interface{})
 		if req.Name != nil {
@@ -70,7 +74,7 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 			return
 		}
 
-		if err := models.UpdateCategoryFields(instanceId, strToInt64(categoryId), fields); err != nil {
+		if err := models.UpdateCategoryFields(instanceId, kid, fields); err != nil {
 			klog.Errorf("update category failed %v", err)
 			c.JSON(http.StatusInternalServerError,
 				answer.ResBody(answer.EcodeError, "update category failed.", nil))

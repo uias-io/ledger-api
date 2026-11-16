@@ -39,8 +39,10 @@ CREATE TABLE IF NOT EXISTS `ledger_category`  (
   `direction` tinyint(4) NOT NULL, -- 类型（1=收入，2=支出）
   `layer` tinyint(1) NOT NULL, -- 1大类，2子类
   `create_time` bigint(19) NOT NULL, -- 创建时间
+  `sort` int(11) NOT NULL DEFAULT '0', -- 同层同方向排序值
   PRIMARY KEY (`kid`) USING BTREE,
   INDEX `fk_category_instance`(`instance_id`) USING BTREE,
+  INDEX `idx_category_instance_layer_dir_sort` (`instance_id`,`layer`,`direction`,`sort`),
   CONSTRAINT `fk_category_instance` FOREIGN KEY (`instance_id`) REFERENCES `ledger_instance` (`instance_id`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB AUTO_INCREMENT = 1000000 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC; -- 收支分类表
 
