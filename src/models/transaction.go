@@ -246,6 +246,8 @@ func GetBillById(instanceId string, billId int64) ([]*OrmTransaction, error) {
 // TransactionFilter 账单查询条件，nil 表示该维度不过滤
 type TransactionFilter struct {
 	CategoryId *int64
+	Children   bool             // 含子类：仅 CategoryId 为主类时生效，子类忽略
+	Tags       []string         // 标签列表，命中任意一个即匹配（OR），空则不过滤
 	From       *int64           // 含
 	To         *int64           // 不含
 	MinAmount  *decimal.Decimal // 含
@@ -264,7 +266,36 @@ func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int6
 		Where("instance_id = ?", instanceId)
 
 	if f.CategoryId != nil {
-		query = query.Where("category_id = ?", *f.CategoryId)
+		if f.Children {
+			// Two-step query: the category itself plus all its children, merged into an IN list.
+			// If the category has no children, childIds is empty and only the category itself remains.
+			// If the category does not exist, categoryIds is empty and an empty result is returned.
+			categoryIds := make([]int64, 0)
+
+			// 1. The category itself.
+			var selfIds []int64
+			db.Model(&OrmCategory{}).
+				Where("instance_id = ? AND kid = ?", instanceId, *f.CategoryId).
+				Pluck("kid", &selfIds)
+			categoryIds = append(categoryIds, selfIds...)
+
+			// 2. All child categories.
+			var childIds []int64
+			db.Table(TableNameCaterela+" AS rel").
+				Joins("JOIN "+TableNameCategory+" AS cc ON cc.kid = rel.child_id").
+				Where("cc.instance_id = ? AND rel.parent_id = ?", instanceId, *f.CategoryId).
+				Pluck("rel.child_id", &childIds)
+			categoryIds = append(categoryIds, childIds...)
+
+			if len(categoryIds) > 0 {
+				query = query.Where("category_id IN ?", categoryIds)
+			} else {
+				// The category does not exist: return an empty result.
+				query = query.Where("1 = 0")
+			}
+		} else {
+			query = query.Where("category_id = ?", *f.CategoryId)
+		}
 	}
 	if f.From != nil {
 		query = query.Where("occ_at >= ?", *f.From) // inclusive
@@ -285,6 +316,16 @@ func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int6
 		case 2: // expense
 			query = query.Where("amount < 0")
 		}
+	}
+
+	// Tag filter: match transactions that have any of the given tags (OR semantics).
+	// `name IN ?` is equivalent to `name = ? OR name = ? OR ...`.
+	// Use a subquery to avoid duplicate rows from a JOIN, keeping Count and pagination correct.
+	if len(f.Tags) > 0 {
+		tagSub := db.Model(&OrmBillTagRel{}).
+			Select("bill_id").
+			Where("instance_id = ? AND name IN ?", instanceId, f.Tags)
+		query = query.Where("kid IN (?)", tagSub)
 	}
 
 	// Amount range: expand into positive and negative segments, so 10 matches both +10 and -10.

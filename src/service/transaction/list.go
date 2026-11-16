@@ -16,21 +16,24 @@ import (
 
 // TransactionQuery 账单查询参数；时间桶语义 [From, To)，单位毫秒
 type TransactionQuery struct {
-	CategoryId *int64  `query:"cid,omitempty"`
-	From       *int64  `query:"from,omitempty"`
-	To         *int64  `query:"to,omitempty"`
-	MinAmount  *string `query:"min_amount,omitempty"`
-	MaxAmount  *string `query:"max_amount,omitempty"`
-	Keyword    *string `query:"keyword,omitempty"`
-	Direction  *int8   `query:"direction,omitempty"`
-	Sort       *string `query:"sort,omitempty"`
-	Order      *string `query:"order,omitempty"`
+	CategoryId *int64   `query:"cid,omitempty"`
+	Children   bool     `query:"children,omitempty"` // 含子类，默认 false
+	Tags       []string `query:"tag,omitempty"`      // 标签名精确过滤，多值 OR（命中任一）
+	From       *int64   `query:"from,omitempty"`
+	To         *int64   `query:"to,omitempty"`
+	MinAmount  *string  `query:"min_amount,omitempty"`
+	MaxAmount  *string  `query:"max_amount,omitempty"`
+	Keyword    *string  `query:"keyword,omitempty"`
+	Direction  *int8    `query:"direction,omitempty"`
+	Sort       *string  `query:"sort,omitempty"`
+	Order      *string  `query:"order,omitempty"`
 }
 
 // buildTransactionFilter 解析并校验查询参数，返回错误消息（空串表示通过）
 func buildTransactionFilter(q *TransactionQuery, limit, offset int) (models.TransactionFilter, string) {
 	f := models.TransactionFilter{
 		CategoryId: q.CategoryId,
+		Children:   q.Children,
 		From:       q.From,
 		To:         q.To,
 		Keyword:    q.Keyword,
@@ -39,6 +42,23 @@ func buildTransactionFilter(q *TransactionQuery, limit, offset int) (models.Tran
 		Offset:     offset,
 		SortColumn: "occ_at",
 		SortOrder:  "DESC",
+	}
+
+	if len(q.Tags) > 0 {
+		seen := make(map[string]struct{}, len(q.Tags))
+		tags := make([]string, 0, len(q.Tags))
+		for _, t := range q.Tags {
+			t = strings.TrimSpace(t)
+			if t == "" {
+				continue
+			}
+			if _, ok := seen[t]; ok {
+				continue
+			}
+			seen[t] = struct{}{}
+			tags = append(tags, t)
+		}
+		f.Tags = tags
 	}
 
 	// 时间桶

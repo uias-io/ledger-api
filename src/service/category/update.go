@@ -14,8 +14,7 @@ import (
 )
 
 type ReqUpdateCategory struct {
-	Name      *string `json:"name,omitempty"`
-	Direction *int8   `json:"direction,omitempty"`
+	Name *string `json:"name,omitempty"`
 }
 
 func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
@@ -23,7 +22,7 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 		klog := slog.FromContext(c)
 		klog.Info("UpdateCategory")
 		userId := c.GetString("userId")
-		categoryId := c.Param("kid")
+		categoryId := c.Param("id")
 
 		var req ReqUpdateCategory
 		if err := c.BindJSON(&req); err != nil {
@@ -61,20 +60,9 @@ func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 		}
 		_ = categ
 
-		if req.Direction != nil && *req.Direction != 1 && *req.Direction != 2 {
-			klog.Warnf("invalid direction: %d", *req.Direction)
-			c.JSON(http.StatusBadRequest,
-				answer.ResBody(answer.EcodeCategoryInvalidDirection,
-					"direction must be 1 or 2", ""))
-			return
-		}
-
 		fields := make(map[string]interface{})
 		if req.Name != nil {
 			fields["name"] = *req.Name
-		}
-		if req.Direction != nil {
-			fields["direction"] = *req.Direction
 		}
 		if len(fields) == 0 {
 			c.JSON(http.StatusBadRequest,
