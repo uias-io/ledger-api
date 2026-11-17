@@ -62,10 +62,10 @@ func BuildTransUpdateMap(req *ReqUpdateTransaction) (map[string]any, error) {
 }
 
 // ConvertToOrmDetail 请求明细转 OrmDetail 数组
-func ConvertToOrmDetail(tid int64, items []ReqDetailItem) ([]*models.OrmDetail, error) {
+func ConvertToOrmDetail(instanceId string, tid int64, items []ReqDetailItem) ([]*models.OrmDetail, error) {
 	var list []*models.OrmDetail
 	for _, v := range items {
-		row := models.OrmDetail{TransactionId: tid}
+		row := models.OrmDetail{InstanceId: instanceId, TransactionId: tid}
 		if v.Name != nil {
 			row.Name = *v.Name
 		}
@@ -207,7 +207,7 @@ func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 
 		var detailList []*models.OrmDetail
 		if req.Detail != nil {
-			detailList, err = ConvertToOrmDetail(tid, *req.Detail)
+			detailList, err = ConvertToOrmDetail(instanceId, tid, *req.Detail)
 			if err != nil {
 				klog.Error("convert detail error", "err", err)
 				c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "parse detail failed", nil))

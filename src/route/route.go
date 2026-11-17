@@ -40,8 +40,9 @@ func AppRoute(h *server.Hertz) {
 	h.GET("/v1/transactions", apc("ledger:bill:list"), transaction.SelectTransaction())          // √ 查询账单
 	h.GET("/v1/transactions/:id", apc("ledger:bill:get"), transaction.BillDetails())             // √ 账单详情
 	h.GET("/v1/bill/:id", apc("ledger:bill:get"), transaction.BillDetails())                     // √ 账单详情
-	h.PATCH("/v1/transactions/:id", apc("ledger:bill:update"), transaction.UpdateTransaction())  // √ 修改
-	h.DELETE("/v1/transactions/:id", apc("ledger:bill:delete"), transaction.DeleteTransaction()) // √ 删除
+	h.PATCH("/v1/transactions/:id", apc("ledger:bill:update"), transaction.UpdateTransaction())  // √ 修改账单
+	h.DELETE("/v1/transactions/:id", apc("ledger:bill:delete"), transaction.DeleteTransaction()) // √ 删除账单
+	h.GET("/v1/details", apc("ledger:bill:list"), transaction.SelectDetail())                    // √ 查询明细
 
 	// TODO 重命名Action
 	h.GET("/v1/tags/hot", apc("ledger:tag:list"), tag.HotTags())       // √ 高频推荐标签

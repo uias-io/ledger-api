@@ -282,7 +282,7 @@ func BillDetails() func(ctx context.Context, c *app.RequestContext) {
 		bill := billList[0] // 单条账单
 
 		// 查询账单明细
-		detailList, err := models.GetDetail(q.BillId)
+		detailList, err := models.GetDetail(instanceId, q.BillId)
 		if err != nil {
 			klog.Errorf("get bill detail failed: %v", err)
 			c.JSON(http.StatusInternalServerError, answer.ResBody(answer.EcodeError, "get bill detail error", nil))

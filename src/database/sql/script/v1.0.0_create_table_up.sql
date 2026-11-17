@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS `ledger_transaction`  (
 -- ----------------------------
 CREATE TABLE IF NOT EXISTS `ledger_detail`  (
   `kid` int(11) NOT NULL AUTO_INCREMENT, -- 明细ID（主键）
+  `instance_id` char(32) NOT NULL,
   `transaction_id` int(11) NOT NULL, -- 关联交易ID
   `name` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NOT NULL, -- 物品名称（如“牛奶”）
   `quantity` decimal(10, 4) NOT NULL, -- 数量（支持小数）
@@ -95,6 +96,8 @@ CREATE TABLE IF NOT EXISTS `ledger_detail`  (
   `remark` varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci NULL DEFAULT NULL, -- 明细备注（如“促销装”）
   PRIMARY KEY (`kid`) USING BTREE,
   INDEX `fk_detail_transaction`(`transaction_id`) USING BTREE,
+  INDEX `fk_detail_instance` (`instance_id`),
+  CONSTRAINT `fk_detail_instance` FOREIGN KEY (`instance_id`) REFERENCES `ledger_instance` (`instance_id`) ON UPDATE CASCADE,
   CONSTRAINT `fk_detail_transaction` FOREIGN KEY (`transaction_id`) REFERENCES `ledger_transaction` (`kid`) ON DELETE CASCADE ON UPDATE CASCADE
 ) ENGINE = InnoDB AUTO_INCREMENT = 1000000 CHARACTER SET = utf8mb4 COLLATE = utf8mb4_general_ci ROW_FORMAT = DYNAMIC; -- 交易明细表
 

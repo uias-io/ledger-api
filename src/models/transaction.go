@@ -51,8 +51,8 @@ func ensureTransactionOwned(tx *gorm.DB, instanceId string, tid int64) error {
 	return nil
 }
 
-// replaceDetails 替换明细,则先删后建。
-func replaceDetails(tx *gorm.DB, tid int64, detailList []*OrmDetail) error {
+// replaceDetails 替换明细,先删后建。
+func replaceDetails(tx *gorm.DB, instanceId string, tid int64, detailList []*OrmDetail) error {
 	if detailList == nil {
 		return nil
 	}
@@ -65,6 +65,7 @@ func replaceDetails(tx *gorm.DB, tid int64, detailList []*OrmDetail) error {
 	}
 	for i := range detailList {
 		detailList[i].TransactionId = tid
+		detailList[i].InstanceId = instanceId
 	}
 	if err := tx.Create(detailList).Error; err != nil {
 		return fmt.Errorf("create detail: %w", err)
@@ -143,7 +144,7 @@ func (d DB) InstallTransaction(transaction *OrmTransaction, detailList []*OrmDet
 		if err := tx.Create(transaction).Error; err != nil {
 			return fmt.Errorf("create transaction: %w", err)
 		}
-		if err := replaceDetails(tx, transaction.Kid, detailList); err != nil {
+		if err := replaceDetails(tx, d.instanceId, transaction.Kid, detailList); err != nil {
 			return err
 		}
 		if err := replaceTags(tx, d.instanceId, transaction.Kid, normalizeTags(tags), transaction.CreateTime); err != nil {
@@ -164,7 +165,7 @@ func (d DB) DeleteTransaction(tid int64) error {
 			Delete(&OrmBillTagRel{}).Error; err != nil {
 			return fmt.Errorf("delete bill tag: %w", err)
 		}
-		if err := tx.Where("transaction_id = ?", tid).
+		if err := tx.Where("instance_id = ? AND transaction_id = ?", d.instanceId, tid).
 			Delete(&OrmDetail{}).Error; err != nil {
 			return fmt.Errorf("delete detail: %w", err)
 		}
@@ -211,7 +212,7 @@ func (d DB) UpdateTransaction(tid int64, transaction map[string]any, detailList 
 		}
 
 		// 明细
-		if err := replaceDetails(tx, tid, detailList); err != nil {
+		if err := replaceDetails(tx, d.instanceId, tid, detailList); err != nil {
 			return err
 		}
 
