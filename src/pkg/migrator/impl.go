@@ -3,6 +3,7 @@ package migrator
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 	"time"
@@ -34,7 +35,7 @@ func newGormMigrator(db *gorm.DB) *gormMigrator {
 	return &gormMigrator{
 		db:        db,
 		tableName: "auto_migration",
-		logger:    NewDefaultLogger(Error),
+		logger:    NewSlogAdapter(slog.Default()),
 	}
 }
 

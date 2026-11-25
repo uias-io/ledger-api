@@ -6,7 +6,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -19,7 +19,7 @@ type ReqUpdateCategory struct {
 
 func UpdateCategory() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		klog.Info("UpdateCategory")
 		userId := c.GetString("userId")
 

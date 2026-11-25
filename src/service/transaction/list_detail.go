@@ -6,7 +6,7 @@ import (
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/common"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strings"
 
@@ -36,7 +36,7 @@ type DetailResp struct {
 // SelectDetail 仅查询明细列表
 func SelectDetail() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		instanceId, err := instance.GetInstanceId(userId)

@@ -6,7 +6,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -15,7 +15,7 @@ import (
 
 func DeleteCategory() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		klog.Info("DeleteCategory")
 		userId := c.GetString("userId")
 		categoryId := c.Param("kid")

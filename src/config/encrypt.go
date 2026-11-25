@@ -1,9 +1,10 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"ledger/src/pkg/crypto"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"os"
 )
 
@@ -15,13 +16,12 @@ func encryption(plain string) {
 
 // decryCfgCipher 解密配置文件密文
 func decryCfgCipher(cipherText *string) {
-	klog := slog.FromContext(nil)
 	if cipherText != nil && *cipherText == "" {
 		return
 	}
 	plain, err := crypto.Decryption(*cipherText)
 	if err != nil {
-		klog.Fatal("Decryption password failed. ", cipherText)
+		zlog.Errorf(context.Background(), "Decryption password failed. %v", cipherText)
 		os.Exit(100)
 	}
 	*cipherText = plain

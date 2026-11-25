@@ -6,7 +6,7 @@ import (
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/common"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strings"
 
@@ -132,9 +132,8 @@ func buildTransactionFilter(q *TransactionQuery, limit, offset int) (models.Tran
 
 func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
-
 		// 1. 实例 ID
 		instanceId, err := instance.GetInstanceId(userId)
 		if err != nil {
@@ -174,7 +173,7 @@ func SelectTransaction() func(ctx context.Context, c *app.RequestContext) {
 
 		// 5. 查询
 		count := int64(0)
-		result, err := models.FindTransactionByFilter(instanceId, filter, &count)
+		result, err := models.FindTransactionByFilter(ctx, instanceId, filter, &count)
 		if err != nil {
 			klog.Error("in db select transaction error: ", err)
 			c.JSON(http.StatusInternalServerError,
@@ -244,7 +243,7 @@ type BillDetailResp struct {
 // BillDetails 账单详情
 func BillDetails() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		klog.Debug("BillDetails")
 
 		// 获取用户实例ID

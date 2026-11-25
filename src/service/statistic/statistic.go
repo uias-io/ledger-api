@@ -5,7 +5,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"time"
 
@@ -24,7 +24,7 @@ func StatOve() func(ctx context.Context, c *app.RequestContext) {
 
 		switch sa {
 		case "s01": // 统计收支
-			S01(c, pt, from, to)
+			S01(ctx, c, pt, from, to)
 		case "s02": // 分类统计
 			// ...
 		default:
@@ -34,8 +34,8 @@ func StatOve() func(ctx context.Context, c *app.RequestContext) {
 	}
 }
 
-func S01(c *app.RequestContext, pt, from, to string) {
-	klog := slog.FromContext(c)
+func S01(ctx context.Context, c *app.RequestContext, pt, from, to string) {
+	klog := zlog.FromCtx(ctx)
 
 	if from == "" {
 		now := time.Now()
@@ -113,7 +113,7 @@ func S01(c *app.RequestContext, pt, from, to string) {
 // CategoryPie 收支分类饼图
 func CategoryPie() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
@@ -150,7 +150,7 @@ func CategoryPie() func(ctx context.Context, c *app.RequestContext) {
 // ExpenseRank 支出分类 TOP 排行
 func ExpenseRank() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)

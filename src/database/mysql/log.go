@@ -2,10 +2,10 @@ package mysql
 
 import (
 	"ledger/src/cfgtypes"
+	"log/slog"
 	"strings"
 	"time"
 
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm/logger"
 )
 
@@ -28,8 +28,8 @@ func gormLogLev(lev string) logger.LogLevel {
 }
 
 func NewGormLogger(cfg *cfgtypes.Ledger) logger.Interface {
-	return logger.New(
-		logrus.StandardLogger(),
+	return logger.NewSlogLogger(
+		slog.Default(),
 		logger.Config{
 			SlowThreshold:             200 * time.Millisecond,    // 慢查询阈值
 			LogLevel:                  gormLogLev(cfg.Log.Level), // 日志级别

@@ -6,7 +6,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -16,7 +16,7 @@ import (
 
 func DeleteTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		// 查询用户的实例ID

@@ -1,10 +1,11 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"ledger/src/cfgtypes"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"time"
 
 	"gorm.io/driver/mysql"
@@ -15,7 +16,8 @@ import (
 // InitDB initializes the database connection.
 func InitDB(cfg *cfgtypes.Ledger) *gorm.DB {
 	dbcfg := cfg.Database
-	klog := slog.FromContext(nil)
+	klog := zlog.FromCtx(zlog.NewCtxWithReqID(context.Background(), "<SYSTEM>"))
+
 	// Construct the DSN string.
 	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true",
 		dbcfg.User, dbcfg.Passwd, dbcfg.Host, dbcfg.Port, dbcfg.Name)
@@ -51,7 +53,6 @@ func InitDB(cfg *cfgtypes.Ledger) *gorm.DB {
 
 		klog.Errorf("Failed to connect to database. Retrying in %v...", backoff)
 		time.Sleep(backoff)
-
 		backoff += time.Second
 	}
 

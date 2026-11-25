@@ -1,11 +1,13 @@
 package config
 
 import (
+	"context"
 	"flag"
-	"gopkg.in/yaml.v3"
 	"ledger/src/cfgtypes"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"os"
+
+	"gopkg.in/yaml.v3"
 )
 
 // FlagArgs represents the command-line arguments for the application.
@@ -43,8 +45,8 @@ func Initializer() {
 }
 
 // InitConfig 初始化配置
-func InitConfig() *cfgtypes.Config {
-	klog := slog.FromContext(nil)
+func InitConfig(ctx context.Context) *cfgtypes.Config {
+	klog := zlog.FromCtx(ctx)
 	klog.Info("Read configuration file: ", *configPath)
 
 	configData, err := os.ReadFile(*configPath)

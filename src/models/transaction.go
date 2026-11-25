@@ -1,6 +1,7 @@
 package models
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -262,8 +263,8 @@ type TransactionFilter struct {
 }
 
 // FindTransactionByFilter returns a paginated list of transactions matching the search criteria.
-func FindTransactionByFilter(instanceId string, f TransactionFilter, count *int64) ([]*OrmTransaction, error) {
-	query := db.Model(&OrmTransaction{}).
+func FindTransactionByFilter(ctx context.Context, instanceId string, f TransactionFilter, count *int64) ([]*OrmTransaction, error) {
+	query := db.WithContext(ctx).Model(&OrmTransaction{}).
 		Where("instance_id = ?", instanceId)
 
 	if f.CategoryId != nil {

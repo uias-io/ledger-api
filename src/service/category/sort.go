@@ -6,7 +6,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -65,7 +65,7 @@ func hasDuplicate(ids []int64) bool {
 // PUT /v1/category/sort/main
 func SortCategoryMain() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		var req ReqSort
@@ -140,7 +140,7 @@ func SortCategoryMain() func(ctx context.Context, c *app.RequestContext) {
 // PUT /v1/category/:categoryId/sort/sub
 func SortCategorySub() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		parentId := strToInt64(c.Param("categoryId"))

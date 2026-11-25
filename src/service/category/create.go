@@ -8,7 +8,7 @@ import (
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/common"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strconv"
 
@@ -24,7 +24,7 @@ type Category struct {
 
 func CreateCategoryMain() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		var reqData Category
@@ -87,7 +87,7 @@ func strToInt64(s string) int64 {
 // CreateCategorySub 添加子分类
 func CreateCategorySub() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		parentId := strToInt64(c.Param("categoryId"))

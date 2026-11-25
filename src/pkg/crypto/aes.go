@@ -5,8 +5,8 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"io"
-	"ledger/src/slog"
 )
 
 const (
@@ -59,11 +59,9 @@ func Encryption(plain string) string {
 
 // Decryption 解密
 func Decryption(cipherText string) (string, error) {
-	klog := slog.FromContext(nil)
 	encryptedHex, err := hex.DecodeString(cipherText)
 	if err != nil {
-		klog.Error("Unable to decode hexadecimal string: ", err)
-		return "", err
+		return "", fmt.Errorf("Unable to decode hexadecimal string:", err)
 	}
 	plain := aesDecryptCFB(encryptedHex, key)
 	return string(plain), nil

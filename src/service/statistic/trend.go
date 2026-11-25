@@ -5,7 +5,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"time"
 
@@ -62,7 +62,7 @@ func fillTrend(fromMs, toMs int64, layout string, step func(time.Time) time.Time
 // DayTrend 日趋势
 func DayTrend() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
@@ -107,7 +107,7 @@ func DayTrend() func(ctx context.Context, c *app.RequestContext) {
 // MonthTrend 按月统计，补齐空白月份
 func MonthTrend() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)
@@ -152,7 +152,7 @@ func MonthTrend() func(ctx context.Context, c *app.RequestContext) {
 // YearTrend 按年统计，补齐空白年份
 func YearTrend() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)

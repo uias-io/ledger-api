@@ -48,6 +48,7 @@ package migrator
 
 import (
 	"embed"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"testing"
@@ -220,7 +221,7 @@ func TestWithLogger(t *testing.T) {
 	db := newTestDB(t)
 
 	t.Run("custom logger is applied", func(t *testing.T) {
-		custom := NewDefaultLogger(Debug)
+		custom := NewSlogAdapter(slog.Default())
 		m := New(db, WithLogger(custom))
 		assert.Same(t, custom, m.Logger())
 	})

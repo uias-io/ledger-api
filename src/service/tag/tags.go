@@ -5,7 +5,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,7 +17,7 @@ import (
 // GET /v1/tags/hot?limit=10
 func HotTags() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		instanceId, err := instance.GetInstanceId(userId)
@@ -63,7 +63,7 @@ func HotTags() func(ctx context.Context, c *app.RequestContext) {
 // GET /v1/tags/search?keyword=xx&limit=10
 func SearchTags() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		instanceId, err := instance.GetInstanceId(userId)
@@ -117,7 +117,7 @@ func SearchTags() func(ctx context.Context, c *app.RequestContext) {
 // GET /v1/bill/:id/tags
 func BillTags() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 
 		instanceId, err := instance.GetInstanceId(userId)

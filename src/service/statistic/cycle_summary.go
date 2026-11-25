@@ -6,7 +6,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/constants"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"math"
 	"net/http"
 	"time"
@@ -89,7 +89,7 @@ func Round2(f float64) float64 {
 // CycleSummary 月度汇总
 func CycleSummary() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		var req QueryArgs
 		if err := c.BindAndValidate(&req); err != nil {
 			klog.Error("BindAndValidate ", err)

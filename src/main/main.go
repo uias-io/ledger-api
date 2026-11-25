@@ -1,17 +1,18 @@
 package main
 
 import (
+	"context"
 	"ledger/src/config"
 	"ledger/src/database/mysql"
 	"ledger/src/database/sql"
 	"ledger/src/models"
 	"ledger/src/pkg/migrator"
 	"ledger/src/route"
-	"ledger/src/slog"
+	"ledger/src/zlog"
+	"log/slog"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app/server"
-	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
@@ -20,11 +21,11 @@ func init() {
 }
 
 // AutoMigrator performs automatic database migrations using embedded SQL scripts
-func AutoMigrator(klog *logrus.Entry, db *gorm.DB) {
+func AutoMigrator(db *gorm.DB) {
 	// Initialize migrator with embedded scripts
 	m := migrator.NewDefault(db,
 		&migrator.Config{
-			Logger:         migrator.NewKlogLogger(klog),
+			Logger:         migrator.NewSlogAdapter(slog.Default()),
 			TableName:      "ledger_migrations",
 			ScriptProvider: migrator.NewEmbeddedScriptProvider("script", sql.SQLScript),
 		})
@@ -37,17 +38,19 @@ func AutoMigrator(klog *logrus.Entry, db *gorm.DB) {
 
 // main is the entry point of the ledger application
 func main() {
-	cfg := config.InitConfig()
+	ctx := context.Background()
+	cfg := config.InitConfig(ctx)
 	app := cfg.Ledger.App
-	slog.InitLogger(&cfg.Ledger.Log)
-	klog := slog.FromContext(nil)
+
+	zlog.InitLogger(&cfg.Ledger.Log)
+	klog := zlog.FromCtx(zlog.NewCtxWithReqID(ctx, "<SYSTEM>"))
 
 	// Initialize database connection
 	db := mysql.InitDB(cfg.Ledger)
 	models.SetConnectPool(db)
 
 	// Execute critical database migrations
-	AutoMigrator(klog, db)
+	AutoMigrator(db)
 
 	klog.Info("start server...")
 	svc := server.Default(

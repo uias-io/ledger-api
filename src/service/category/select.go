@@ -5,7 +5,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -55,7 +55,7 @@ func ConvertToTree(categories []*models.CategoryWithRelResult) []*RespPayload {
 // SelectCategory 查询分类
 func SelectCategory() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 
 		type Query struct {
 			Direction int8 `query:"direction"`

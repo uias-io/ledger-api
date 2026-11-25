@@ -8,7 +8,7 @@ import (
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/uuid"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"time"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -17,27 +17,30 @@ import (
 
 func RequestId() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
 		xRequestId := string(c.GetHeader("X-Request-Id"))
 		if xRequestId == "" {
 			xRequestId = uuid.V4UUID()
 			c.Response.Header.Set("X-Request-Id", xRequestId)
-			klog.Warnf("request id is empty, Set a new request id: %s", xRequestId)
+			zlog.Warnf(ctx, "request id is empty, set new request id: %s", xRequestId)
 		}
-		c.Set("xRequestId", xRequestId)
-		c.Next(ctx)
+		newCtx := zlog.NewCtxWithReqID(ctx, xRequestId)
+		c.Next(newCtx)
 	}
 }
 
+// RequestRecorder 记录请求耗时与状态
 func RequestRecorder() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
 		start := time.Now()
 		c.Next(ctx)
-		stop := time.Now()
-		latency := stop.Sub(start)
-		klog.Infof("|%14s | %d |%7s %s",
-			latency, c.Response.StatusCode(), string(c.Request.Method()), c.Request.URI().String())
+		latency := time.Since(start)
+
+		zlog.Infof(ctx, "|%14s | %d |%7s %s",
+			latency,
+			c.Response.StatusCode(),
+			string(c.Request.Method()),
+			c.Request.URI().String(),
+		)
 	}
 }
 
@@ -46,7 +49,7 @@ const xAuthTokenKey = "X-Auth-Token"
 
 func apc(action string) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		client, err := uias.NewClientBuilder().
 			WithEndpoint(config.AppCfg.Ledger.Uias.Endpoint).
 			WithTimeout(10 * time.Second).

@@ -7,7 +7,7 @@ import (
 	"ledger/src/models"
 	"ledger/src/pkg/answer"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -167,7 +167,7 @@ func resolveUpdateAmount(instanceId string, tid int64, reqAmount *decimal.Decima
 
 func UpdateTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 
 		var req ReqUpdateTransaction
 		if err := c.BindJSON(&req); err != nil {

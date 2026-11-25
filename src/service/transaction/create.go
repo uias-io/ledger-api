@@ -8,7 +8,7 @@ import (
 	"ledger/src/pkg/answer"
 	"ledger/src/pkg/common"
 	"ledger/src/service/instance"
-	"ledger/src/slog"
+	"ledger/src/zlog"
 	"net/http"
 	"strings"
 	"time"
@@ -105,7 +105,7 @@ func toOrmDetails(details []*Detail) []*models.OrmDetail {
 
 func CreateTransaction() func(ctx context.Context, c *app.RequestContext) {
 	return func(ctx context.Context, c *app.RequestContext) {
-		klog := slog.FromContext(c)
+		klog := zlog.FromCtx(ctx)
 		userId := c.GetString("userId")
 		var ReqData ReqTransaction
 		if err := c.BindJSON(&ReqData); err != nil {
